@@ -17,7 +17,8 @@ from utils.logger import Logger
 from utils.config_cache import ConfigCache
 from ui.styles import MODERN_STYLE
 from ui.components import MessageBox
-from ui.components.dialogs import PeerManagerDialog, PeerEditDialog, LogDialog
+from ui.components.dialogs import PeerManagerDialog
+# TODO: PeerEditDialog, LogDialog 待实现
 from ui.minecraft import MinecraftLauncherHandler, MinecraftPathResolver
 from ui.threads import ConnectThread, ScanThread
 
@@ -337,9 +338,8 @@ class MainWindow(QMainWindow):
     
     def show_log_dialog(self):
         """显示日志对话框"""
-        if not self.log_dialog:
-            self.log_dialog = LogDialog(self)
-        self.log_dialog.show()
+        # TODO: 实现 LogDialog
+        MessageBox.show_info(self, "提示", "日志功能开发中...")
     
     def monitor_sync_state(self):
         """监控同步状态"""
