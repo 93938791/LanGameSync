@@ -226,7 +226,7 @@ class MainWindow(QMainWindow):
         settings_btn.setObjectName("sidebarBtnInactive")
         settings_btn.setFixedSize(70, 70)
         settings_btn.setToolTip("设置")
-        settings_btn.clicked.connect(self.show_log_dialog)
+        settings_btn.clicked.connect(lambda: MessageBox.show_info(self, "提示", "设置功能开发中..."))
         settings_btn.setStyleSheet("""
             QPushButton {
                 background: #2e2e2e;
