@@ -542,13 +542,20 @@ class MainWindow(QMainWindow):
     
     def connect_to_network(self):
         """连接到网络"""
-        # TODO: 从 main_window_v2.py 迁移完整功能
         room_name = self.room_input.text().strip()
         password = self.password_input.text().strip()
         
         if not room_name or not password:
             MessageBox.show_warning(self, "提示", "请输入房间号和密码")
             return
+        
+        # 获取选中的节点
+        selected_peer = None
+        if self.node_combo.currentIndex() > 0:
+            peer_list = self.config_data.get("peer_list", [])
+            peer_index = self.node_combo.currentIndex() - 1
+            if peer_index < len(peer_list):
+                selected_peer = peer_list[peer_index].get("peers", "")
         
         # 保存配置
         self.config_data["network"] = {
@@ -558,25 +565,32 @@ class MainWindow(QMainWindow):
         ConfigCache.save(self.config_data)
         
         # 启动连接线程
-        self.connect_thread = ConnectThread(self.controller, room_name, password)
+        self.connect_thread = ConnectThread(self.controller, room_name, password, selected_peer)
         self.connect_thread.connected.connect(self.on_connected)
+        self.connect_thread.progress.connect(self.on_connect_progress)
         self.connect_thread.start()
         
         self.connect_btn.setEnabled(False)
-        self.connect_btn.setText("正在连接...")
+        self.connect_btn.setText("⏳ 正在连接...")
+        self.status_label.setText("📡 状态: 正在连接...")
+    
+    def on_connect_progress(self, message):
+        """连接进度回调"""
+        self.status_label.setText(f"📡 {message}")
     
     def on_connected(self, success, message):
         """连接完成回调"""
         self.connect_btn.setEnabled(True)
-        self.connect_btn.setText("连接到网络")
+        self.connect_btn.setText("🌐 连接到网络")
         
         if success:
             self.is_connected = True
-            self.status_label.setText(f"状态: 已连接 | 虚拟IP: {message}")
-            MessageBox.show_info(self, "成功", "网络连接成功！")
+            self.status_label.setText(f"📡 状态: 已连接 | 虚拟IP: {message}")
+            MessageBox.show_info(self, "成功", f"网络连接成功！\n\n虚拟IP: {message}")
         else:
-            self.status_label.setText("状态: 连接失败")
-            MessageBox.show_error(self, "错误", f"连接失败: {message}")
+            self.is_connected = False
+            self.status_label.setText("📡 状态: 连接失败")
+            MessageBox.show_error(self, "错误", f"连接失败\n\n{message}")
     
     def load_game_list(self):
         """加载游戏列表"""
