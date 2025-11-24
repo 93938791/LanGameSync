@@ -3,7 +3,7 @@
 """
 import sys
 from config import Config
-from ui.main_window_v2 import main as run_app
+from ui.main_window import main as run_app
 from utils.logger import logger
 
 def main():
