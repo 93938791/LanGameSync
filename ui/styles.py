@@ -38,6 +38,16 @@ QMainWindow {
     background: #ffffff;
     border-radius: 8px;
     border: 1px solid #e0e0e0;
+    padding-top: 10px;
+}
+
+#networkGroup::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    padding: 8px 15px;
+    font-size: 16px;
+    font-weight: bold;
+    color: #333333;
 }
 
 /* 设备列表区域 */
@@ -45,6 +55,35 @@ QMainWindow {
     background: #ffffff;
     border-radius: 8px;
     border: 1px solid #e0e0e0;
+    padding-top: 10px;
+}
+
+#clientsGroup::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    padding: 8px 15px;
+    font-size: 16px;
+    font-weight: bold;
+    color: #333333;
+}
+
+/* QGroupBox 通用样式 */
+QGroupBox {
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    margin-top: 12px;
+    padding-top: 15px;
+    background: #ffffff;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    padding: 5px 15px;
+    font-size: 16px;
+    font-weight: bold;
+    color: #333333;
+    background: transparent;
 }
 
 /* 输入框样式 - 微信风格 */
