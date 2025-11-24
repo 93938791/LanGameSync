@@ -633,8 +633,9 @@ class MainWindow(QMainWindow):
         except Exception as e:
             logger.error(f"断开连接失败: {e}")
             MessageBox.show_error(self, "错误", f"断开连接失败\n\n{str(e)}")
+    
+    def load_game_list(self):
         """加载游戏列表"""
-        # TODO: 从 main_window_v2.py 迁移完整功能
         self.game_list.clear()
         game_list = self.config_data.get("game_list", [])
         
