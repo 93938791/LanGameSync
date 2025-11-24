@@ -1,4 +1,4 @@
-"""
+﻿"""
 GUI主窗�?- 美化�?v2.0
 毛玻璃简洁风格，完全重构
 
@@ -28,59 +28,11 @@ from utils.config_cache import ConfigCache
 from ui.styles import MODERN_STYLE
 from ui.components import MessageBox
 from ui.minecraft import MinecraftLauncherHandler, MinecraftPathResolver
+from ui.threads import ConnectThread, ScanThread
 
 logger = Logger().get_logger("MainWindow")
 
 
-class ConnectThread(QThread):
-    """网络连接线程（避免阻塞主线程�?""
-    connected = pyqtSignal(bool, str)
-    progress = pyqtSignal(str)
-    
-    def __init__(self, controller, room_name, password):
-        super().__init__()
-        self.controller = controller
-        self.room_name = room_name
-        self.password = password
-    
-    def run(self):
-        try:
-            self.progress.emit("正在初始化Syncthing...")
-            if not self.controller.syncthing.start():
-                self.connected.emit(False, "Syncthing启动失败")
-                return
-            
-            self.progress.emit(f"正在连接到房�? {self.room_name}...")
-            if self.controller.easytier.start():
-                virtual_ip = self.controller.easytier.virtual_ip
-                self.connected.emit(True, virtual_ip)
-            else:
-                self.connected.emit(False, "网络连接失败")
-        except Exception as e:
-            logger.error(f"连接线程异常: {e}")
-            self.connected.emit(False, str(e))
-
-
-class ScanThread(QThread):
-    """设备扫描线程（避免阻塞主线程�?""
-    peers_found = pyqtSignal(list)  # 发送peer列表
-    
-    def __init__(self, controller):
-        super().__init__()
-        self.controller = controller
-        self.running = True
-    
-    def run(self):
-        try:
-            if self.running:
-                peers = self.controller.easytier.discover_peers(timeout=2)
-                if peers:
-                    self.peers_found.emit(peers)
-        except Exception as e:
-            logger.error(f"扫描线程异常: {e}")
-    
-    def stop(self):
-        self.running = False
 
 
 class PeerManagerDialog(QDialog):
@@ -3441,3 +3393,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
