@@ -252,6 +252,75 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(20, 15, 20, 20)
         layout.setSpacing(15)
         
+        # 节点设置区域
+        node_group = QGroupBox("节点设置")
+        node_group.setObjectName("networkGroup")
+        node_layout = QVBoxLayout()
+        node_layout.setSpacing(12)
+        node_layout.setContentsMargins(20, 20, 20, 20)
+        
+        # 节点选择
+        node_select_layout = QHBoxLayout()
+        node_label = QLabel("节点选择:")
+        node_label.setMinimumWidth(80)
+        node_select_layout.addWidget(node_label)
+        
+        from PyQt5.QtWidgets import QComboBox
+        self.node_combo = QComboBox()
+        self.node_combo.addItem("不使用节点")
+        # 加载已保存的节点
+        peer_list = self.config_data.get("peer_list", [])
+        for peer in peer_list:
+            self.node_combo.addItem(peer.get("name", "未命名节点"))
+        self.node_combo.setStyleSheet("""
+            QComboBox {
+                background: #ffffff;
+                border: 1px solid #d0d0d0;
+                border-radius: 4px;
+                padding: 8px 12px;
+                font-size: 14px;
+                min-height: 20px;
+            }
+            QComboBox:hover {
+                border: 1px solid #b0b0b0;
+            }
+            QComboBox::drop-down {
+                border: none;
+                width: 30px;
+            }
+            QComboBox::down-arrow {
+                image: none;
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 6px solid #666666;
+                margin-right: 10px;
+            }
+        """)
+        node_select_layout.addWidget(self.node_combo)
+        
+        # 配置节点按钮
+        config_node_btn = QPushButton("⚙ 配置节点")
+        config_node_btn.clicked.connect(self.show_peer_manager)
+        config_node_btn.setStyleSheet("""
+            QPushButton {
+                background: #f0f0f0;
+                color: #333333;
+                border: 1px solid #d0d0d0;
+                border-radius: 4px;
+                padding: 8px 16px;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background: #e0e0e0;
+                border: 1px solid #b0b0b0;
+            }
+        """)
+        node_select_layout.addWidget(config_node_btn)
+        node_layout.addLayout(node_select_layout)
+        
+        node_group.setLayout(node_layout)
+        layout.addWidget(node_group)
+        
         # 网络管理区域
         network_group = QGroupBox("网络管理")
         network_group.setObjectName("networkGroup")
@@ -266,6 +335,10 @@ class MainWindow(QMainWindow):
         room_layout.addWidget(room_label)
         self.room_input = QLineEdit()
         self.room_input.setPlaceholderText("输入房间号")
+        # 加载保存的房间号
+        network_config = self.config_data.get("network", {})
+        if network_config.get("room_name"):
+            self.room_input.setText(network_config["room_name"])
         room_layout.addWidget(self.room_input)
         network_layout.addLayout(room_layout)
         
@@ -277,13 +350,17 @@ class MainWindow(QMainWindow):
         self.password_input = QLineEdit()
         self.password_input.setPlaceholderText("输入密码")
         self.password_input.setEchoMode(QLineEdit.Password)
+        # 加载保存的密码
+        if network_config.get("password"):
+            self.password_input.setText(network_config["password"])
         pwd_layout.addWidget(self.password_input)
         network_layout.addLayout(pwd_layout)
         
         # 连接按钮
-        self.connect_btn = QPushButton("连接到网络")
+        self.connect_btn = QPushButton("🌐 连接到网络")
         self.connect_btn.setObjectName("connectBtn")
         self.connect_btn.setMinimumHeight(45)
+        self.connect_btn.setCursor(Qt.PointingHandCursor)
         self.connect_btn.clicked.connect(self.connect_to_network)
         network_layout.addWidget(self.connect_btn)
         
@@ -291,7 +368,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(network_group)
         
         # 客户端信息
-        clients_group = QGroupBox("已连接的客户端")
+        clients_group = QGroupBox("📱 已连接的客户端")
         clients_group.setObjectName("clientsGroup")
         clients_layout = QVBoxLayout()
         clients_layout.setContentsMargins(15, 15, 15, 15)
@@ -301,19 +378,30 @@ class MainWindow(QMainWindow):
         self.clients_table.setHorizontalHeaderLabels(["设备名", "虚拟IP"])
         self.clients_table.horizontalHeader().setStretchLastSection(True)
         self.clients_table.verticalHeader().setVisible(False)
+        self.clients_table.setAlternatingRowColors(True)
+        self.clients_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.clients_table.setStyleSheet("""
             QTableWidget {
                 background: #ffffff;
                 border: none;
                 gridline-color: #f0f0f0;
+                font-size: 14px;
+            }
+            QTableWidget::item {
+                padding: 10px;
             }
             QHeaderView::section {
                 background: #f8f8f8;
-                padding: 8px;
+                padding: 10px;
                 border: none;
-                border-bottom: 1px solid #e0e0e0;
+                border-bottom: 2px solid #e0e0e0;
                 font-weight: bold;
-                color: #666666;
+                color: #333333;
+                font-size: 14px;
+            }
+            QTableWidget::item:selected {
+                background: #e8f5e9;
+                color: #333333;
             }
         """)
         clients_layout.addWidget(self.clients_table)
@@ -321,7 +409,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(clients_group)
         
         # 状态栏
-        self.status_label = QLabel("状态: 未连接")
+        self.status_label = QLabel("📡 状态: 未连接")
         self.status_label.setObjectName("statusLabel")
         self.status_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.status_label)
@@ -398,9 +486,59 @@ class MainWindow(QMainWindow):
         self.current_page = page_name
         if page_name == "network":
             self.content_stack.setCurrentIndex(0)
+            # 更新按钮样式
+            self.network_btn.setStyleSheet("""
+                QPushButton {
+                    background: #2e2e2e;
+                    color: #ffffff;
+                    border: none;
+                    border-left: 3px solid #07c160;
+                    font-size: 28px;
+                }
+                QPushButton:hover {
+                    background: #3e3e3e;
+                }
+            """)
+            self.game_btn.setStyleSheet("""
+                QPushButton {
+                    background: #2e2e2e;
+                    color: #888888;
+                    border: none;
+                    font-size: 28px;
+                }
+                QPushButton:hover {
+                    background: #3e3e3e;
+                    color: #aaaaaa;
+                }
+            """)
         elif page_name == "game":
             self.content_stack.setCurrentIndex(1)
             self.load_game_list()
+            # 更新按钮样式
+            self.network_btn.setStyleSheet("""
+                QPushButton {
+                    background: #2e2e2e;
+                    color: #888888;
+                    border: none;
+                    font-size: 28px;
+                }
+                QPushButton:hover {
+                    background: #3e3e3e;
+                    color: #aaaaaa;
+                }
+            """)
+            self.game_btn.setStyleSheet("""
+                QPushButton {
+                    background: #2e2e2e;
+                    color: #ffffff;
+                    border: none;
+                    border-left: 3px solid #07c160;
+                    font-size: 28px;
+                }
+                QPushButton:hover {
+                    background: #3e3e3e;
+                }
+            """)
     
     def connect_to_network(self):
         """连接到网络"""
@@ -450,10 +588,16 @@ class MainWindow(QMainWindow):
             item = QListWidgetItem(game.get("name", "未命名"))
             self.game_list.addItem(item)
     
-    def show_log_dialog(self):
-        """显示日志对话框"""
-        # TODO: 实现 LogDialog
-        MessageBox.show_info(self, "提示", "日志功能开发中...")
+    def show_peer_manager(self):
+        """显示节点管理对话框"""
+        dialog = PeerManagerDialog(self, self.config_data)
+        if dialog.exec_() == dialog.Accepted:
+            # 重新加载节点列表
+            self.node_combo.clear()
+            self.node_combo.addItem("不使用节点")
+            peer_list = self.config_data.get("peer_list", [])
+            for peer in peer_list:
+                self.node_combo.addItem(peer.get("name", "未命名节点"))
     
     def monitor_sync_state(self):
         """监控同步状态"""
