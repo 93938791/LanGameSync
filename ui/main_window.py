@@ -120,7 +120,6 @@ class MainWindow(QMainWindow):
     
     def create_title_bar(self):
         """创建自定义标题栏"""
-        # TODO: 从 main_window_v2.py 迁移
         title_bar = QWidget()
         title_bar.setObjectName("titleBar")
         title_bar.setFixedHeight(50)
@@ -169,11 +168,11 @@ class MainWindow(QMainWindow):
         """)
         layout.addWidget(close_btn)
         
+        self.title_bar = title_bar
         return title_bar
     
     def create_sidebar(self):
         """创建左侧边栏"""
-        # TODO: 从 main_window_v2.py 迁移
         sidebar = QWidget()
         sidebar.setObjectName("sidebar")
         sidebar.setFixedWidth(70)
@@ -184,23 +183,62 @@ class MainWindow(QMainWindow):
         
         # 网络管理按钮
         self.network_btn = QPushButton("🌐")
+        self.network_btn.setObjectName("sidebarBtn")
         self.network_btn.setFixedSize(70, 70)
         self.network_btn.setToolTip("网络管理")
         self.network_btn.clicked.connect(lambda: self.switch_page("network"))
+        self.network_btn.setStyleSheet("""
+            QPushButton {
+                background: #2e2e2e;
+                color: #ffffff;
+                border: none;
+                border-left: 3px solid #07c160;
+                font-size: 28px;
+            }
+            QPushButton:hover {
+                background: #3e3e3e;
+            }
+        """)
         layout.addWidget(self.network_btn)
         
         # 游戏管理按钮
         self.game_btn = QPushButton("🎮")
+        self.game_btn.setObjectName("sidebarBtnInactive")
         self.game_btn.setFixedSize(70, 70)
         self.game_btn.setToolTip("游戏管理")
         self.game_btn.clicked.connect(lambda: self.switch_page("game"))
+        self.game_btn.setStyleSheet("""
+            QPushButton {
+                background: #2e2e2e;
+                color: #888888;
+                border: none;
+                font-size: 28px;
+            }
+            QPushButton:hover {
+                background: #3e3e3e;
+                color: #aaaaaa;
+            }
+        """)
         layout.addWidget(self.game_btn)
         
         # 设置按钮
         settings_btn = QPushButton("⚙️")
+        settings_btn.setObjectName("sidebarBtnInactive")
         settings_btn.setFixedSize(70, 70)
         settings_btn.setToolTip("设置")
         settings_btn.clicked.connect(self.show_log_dialog)
+        settings_btn.setStyleSheet("""
+            QPushButton {
+                background: #2e2e2e;
+                color: #888888;
+                border: none;
+                font-size: 28px;
+            }
+            QPushButton:hover {
+                background: #3e3e3e;
+                color: #aaaaaa;
+            }
+        """)
         
         layout.addStretch()
         layout.addWidget(settings_btn)
@@ -353,21 +391,19 @@ class MainWindow(QMainWindow):
     
     def mousePressEvent(self, event):
         """鼠标按下（拖动窗口）"""
-        if event.button() == Qt.LeftButton:
-            if hasattr(self, 'title_bar') and self.title_bar.geometry().contains(event.pos()):
-                self.drag_position = event.globalPos() - self.frameGeometry().topLeft()
-                event.accept()
+        if event.button() == Qt.LeftButton and event.pos().y() <= 50:
+            self.drag_position = event.globalPos() - self.frameGeometry().topLeft()
+            event.accept()
     
     def mouseMoveEvent(self, event):
         """鼠标移动"""
-        if event.buttons() == Qt.LeftButton and hasattr(self, 'drag_position'):
+        if event.buttons() == Qt.LeftButton and self.drag_position is not None:
             self.move(event.globalPos() - self.drag_position)
             event.accept()
     
     def mouseReleaseEvent(self, event):
         """鼠标释放"""
-        if hasattr(self, 'drag_position'):
-            del self.drag_position
+        self.drag_position = None
     
     def closeEvent(self, event):
         """关闭窗口"""
