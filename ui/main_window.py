@@ -581,18 +581,58 @@ class MainWindow(QMainWindow):
     def on_connected(self, success, message):
         """连接完成回调"""
         self.connect_btn.setEnabled(True)
-        self.connect_btn.setText("🌐 连接到网络")
         
         if success:
             self.is_connected = True
             self.status_label.setText(f"📡 状态: 已连接 | 虚拟IP: {message}")
-            MessageBox.show_info(self, "成功", f"网络连接成功！\n\n虚拟IP: {message}")
+            # 连接成功后不弹框，按钮变为断开连接
+            self.connect_btn.setText("❌ 断开连接")
+            self.connect_btn.clicked.disconnect()
+            self.connect_btn.clicked.connect(self.disconnect_network)
+            self.connect_btn.setStyleSheet("""
+                QPushButton {
+                    background: #fa5151;
+                    color: #ffffff;
+                    border: none;
+                    border-radius: 4px;
+                    font-size: 14px;
+                    font-weight: bold;
+                    padding: 12px 24px;
+                    min-height: 45px;
+                }
+                QPushButton:hover {
+                    background: #e84545;
+                }
+                QPushButton:pressed {
+                    background: #d63838;
+                }
+            """)
         else:
             self.is_connected = False
             self.status_label.setText("📡 状态: 连接失败")
+            self.connect_btn.setText("🌐 连接到网络")
             MessageBox.show_error(self, "错误", f"连接失败\n\n{message}")
     
-    def load_game_list(self):
+    def disconnect_network(self):
+        """断开网络连接"""
+        try:
+            # 停止服务
+            self.controller.stop()
+            
+            self.is_connected = False
+            self.status_label.setText("📡 状态: 未连接")
+            
+            # 按钮恢复为连接状态
+            self.connect_btn.clicked.disconnect()
+            self.connect_btn.clicked.connect(self.connect_to_network)
+            self.connect_btn.setText("🌐 连接到网络")
+            self.connect_btn.setObjectName("connectBtn")
+            # 恢复原来的样式（通过全局样式表）
+            self.connect_btn.setStyleSheet("")
+            self.setStyleSheet(self.styleSheet())  # 重新应用全局样式
+        except Exception as e:
+            logger.error(f"断开连接失败: {e}")
+            MessageBox.show_error(self, "错误", f"断开连接失败\n\n{str(e)}")
         """加载游戏列表"""
         # TODO: 从 main_window_v2.py 迁移完整功能
         self.game_list.clear()

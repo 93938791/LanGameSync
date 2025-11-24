@@ -13,11 +13,12 @@ class ConnectThread(QThread):
     connected = pyqtSignal(bool, str)
     progress = pyqtSignal(str)
     
-    def __init__(self, controller, room_name, password):
+    def __init__(self, controller, room_name, password, peer=None):
         super().__init__()
         self.controller = controller
         self.room_name = room_name
         self.password = password
+        self.peer = peer
     
     def run(self):
         try:
