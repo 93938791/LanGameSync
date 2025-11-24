@@ -8,10 +8,11 @@ QMainWindow {
     background: transparent;
 }
 
-/* 主容器 - 微信灰色背景 */
+/* 主容器 - 现代灰色背景 */
 #mainContainer {
-    background: #f0f0f0;
-    border-radius: 8px;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #f8f9fa, stop:1 #e8eaed);
+    border-radius: 10px;
 }
 
 /* 标题栏 */
@@ -23,8 +24,9 @@ QMainWindow {
 
 /* 内容区域 */
 #contentWidget {
-    background: #f0f0f0;
-    border-bottom-right-radius: 8px;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #f8f9fa, stop:1 #e8eaed);
+    border-bottom-right-radius: 10px;
 }
 
 /* 侧边栏 */
@@ -35,124 +37,140 @@ QMainWindow {
 
 /* 网络设置区域 */
 #networkGroup {
-    background: #ffffff;
-    border-radius: 8px;
-    border: 1px solid #e0e0e0;
-    padding-top: 10px;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #ffffff, stop:1 #f8f9fa);
+    border: none;
+    border-radius: 12px;
+    padding: 25px;
+    margin: 5px;
 }
 
 #networkGroup::title {
     subcontrol-origin: margin;
     subcontrol-position: top left;
-    padding: 8px 15px;
-    font-size: 16px;
+    padding: 0px 8px 8px 8px;
+    font-size: 17px;
     font-weight: bold;
-    color: #333333;
+    color: #1a73e8;
+    background: transparent;
 }
 
 /* 设备列表区域 */
 #clientsGroup {
-    background: #ffffff;
-    border-radius: 8px;
-    border: 1px solid #e0e0e0;
-    padding-top: 10px;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #ffffff, stop:1 #f8f9fa);
+    border: none;
+    border-radius: 12px;
+    padding: 25px;
+    margin: 5px;
 }
 
 #clientsGroup::title {
     subcontrol-origin: margin;
     subcontrol-position: top left;
-    padding: 8px 15px;
-    font-size: 16px;
+    padding: 0px 8px 8px 8px;
+    font-size: 17px;
     font-weight: bold;
-    color: #333333;
+    color: #1a73e8;
+    background: transparent;
 }
 
 /* QGroupBox 通用样式 */
 QGroupBox {
-    border: 1px solid #e0e0e0;
-    border-radius: 8px;
-    margin-top: 12px;
-    padding-top: 15px;
-    background: #ffffff;
+    border: none;
+    border-radius: 12px;
+    margin-top: 15px;
+    padding-top: 20px;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #ffffff, stop:1 #f8f9fa);
 }
 
 QGroupBox::title {
     subcontrol-origin: margin;
     subcontrol-position: top left;
-    padding: 5px 15px;
-    font-size: 16px;
+    padding: 0px 8px 8px 8px;
+    font-size: 17px;
     font-weight: bold;
-    color: #333333;
+    color: #1a73e8;
     background: transparent;
 }
 
-/* 输入框样式 - 微信风格 */
+/* 输入框样式 - 现代风格 */
 QLineEdit {
     background: #ffffff;
-    border: 1px solid #d0d0d0;
-    border-radius: 4px;
-    padding: 10px 12px;
+    border: 2px solid #e8eaed;
+    border-radius: 8px;
+    padding: 12px 16px;
     font-size: 14px;
-    color: #333333;
-    selection-background-color: #07c160;
-    min-height: 20px;
+    color: #202124;
+    selection-background-color: #1a73e8;
+    min-height: 22px;
 }
 
 QLineEdit:focus {
-    border: 1px solid #07c160;
+    border: 2px solid #1a73e8;
+    background: #ffffff;
 }
 
 QLineEdit:hover {
-    border: 1px solid #b0b0b0;
+    border: 2px solid #5f6368;
+    background: #f8f9fa;
 }
 
-/* 按钮样式 - 微信绿 */
+/* 按钮样式 - 现代风格 */
 QPushButton {
-    background: #f0f0f0;
-    color: #333333;
-    border: 1px solid #d0d0d0;
-    border-radius: 4px;
-    padding: 8px 16px;
+    background: #ffffff;
+    color: #1a73e8;
+    border: 2px solid #dadce0;
+    border-radius: 8px;
+    padding: 10px 24px;
     font-size: 14px;
+    font-weight: 500;
 }
 
 QPushButton:hover {
-    background: #e0e0e0;
-    border: 1px solid #b0b0b0;
+    background: #f8f9fa;
+    border: 2px solid #1a73e8;
+    color: #1967d2;
 }
 
 QPushButton:pressed {
-    background: #d0d0d0;
+    background: #e8f0fe;
+    border: 2px solid #1967d2;
 }
 
 QPushButton:disabled {
-    background: #f5f5f5;
-    color: #999999;
-    border: 1px solid #e0e0e0;
+    background: #f8f9fa;
+    color: #9aa0a6;
+    border: 2px solid #e8eaed;
 }
 
-/* 连接按钮 - 微信绿色 */
+/* 连接按钮 - Google 蓝 */
 QPushButton#connectBtn {
-    background: #07c160;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #4285f4, stop:1 #1a73e8);
     color: #ffffff;
     border: none;
-    border-radius: 4px;
-    font-size: 14px;
+    border-radius: 8px;
+    font-size: 15px;
     font-weight: bold;
-    padding: 12px 24px;
+    padding: 14px 28px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
 }
 
 QPushButton#connectBtn:hover {
-    background: #06ae56;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #5a95f5, stop:1 #2b7de9);
 }
 
 QPushButton#connectBtn:pressed {
-    background: #059048;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #1967d2, stop:1 #1557b0);
 }
 
 QPushButton#connectBtn:disabled {
-    background: #a0a0a0;
-    color: #ffffff;
+    background: #e8eaed;
+    color: #9aa0a6;
 }
 
 /* 列表样式 */
@@ -214,12 +232,14 @@ QLabel {
 }
 
 #statusLabel {
-    background: #ffffff;
-    border: 1px solid #e0e0e0;
-    border-radius: 4px;
-    padding: 12px 20px;
-    font-size: 13px;
-    color: #666666;
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                                stop:0 #e8f0fe, stop:1 #f8f9fa);
+    border: none;
+    border-radius: 8px;
+    padding: 14px 24px;
+    font-size: 14px;
+    color: #1a73e8;
+    font-weight: 500;
 }
 
 /* 菜单栏样式 */
@@ -289,34 +309,40 @@ QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
     background: none;
 }
 
-/* 表格样式 - 微信风格 */
+/* 表格样式 - 现代风格 */
 QTableWidget {
     background: #ffffff;
     border: none;
-    border-radius: 4px;
-    gridline-color: #f0f0f0;
-    font-size: 13px;
-    color: #333333;
+    border-radius: 8px;
+    gridline-color: #f1f3f4;
+    font-size: 14px;
+    color: #202124;
 }
 
 QTableWidget::item {
-    padding: 12px 8px;
-    border-bottom: 1px solid #f0f0f0;
+    padding: 14px 12px;
+    border-bottom: 1px solid #f1f3f4;
 }
 
 QTableWidget::item:selected {
-    background: #f0f0f0;
-    color: #333333;
+    background: #e8f0fe;
+    color: #1a73e8;
 }
 
 QTableWidget::item:hover {
-    background: #f5f5f5;
+    background: #f8f9fa;
 }
 
 QHeaderView::section {
-    background: #fafafa;
-    color: #666666;
-    padding: 12px 8px;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #f8f9fa, stop:1 #f1f3f4);
+    color: #5f6368;
+    padding: 12px 10px;
+    border: none;
+    border-bottom: 2px solid #e8eaed;
+    font-weight: bold;
+    font-size: 13px;
+}
     border: none;
     border-bottom: 1px solid #e0e0e0;
     font-weight: bold;
