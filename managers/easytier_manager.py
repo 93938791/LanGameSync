@@ -24,7 +24,7 @@ class EasytierManager:
         """启动Easytier虚拟网络
         
         Args:
-            custom_peers: 自定义节点列表，如果为None则使用默认公共节点
+            custom_peers: 自定义节点列表，如果为None则使用默认公共节点，如果为[]则不使用任何节点
             network_name: 网络名称，如果为None则使用配置文件中的名称
             network_secret: 网络密码，如果为None则使用配置文件中的密码
         """
@@ -34,7 +34,16 @@ class EasytierManager:
         # 使用传入的参数或默认配置
         net_name = network_name if network_name else Config.EASYTIER_NETWORK_NAME
         net_secret = network_secret if network_secret else Config.EASYTIER_NETWORK_SECRET
-        peers_to_use = custom_peers if custom_peers else Config.EASYTIER_PUBLIC_PEERS
+        
+        # 处理节点列表
+        if custom_peers is None:
+            # None 表示使用默认公共节点
+            peers_to_use = Config.EASYTIER_PUBLIC_PEERS
+        elif custom_peers == []:
+            # 空列表表示不使用任何节点
+            peers_to_use = []
+        else:
+            peers_to_use = custom_peers
         
         args = [
             "--no-tun",
@@ -49,12 +58,15 @@ class EasytierManager:
             # 如果是单个字符串，按逗号分割
             peers_list = [p.strip() for p in peers_to_use.split(',') if p.strip()]
         else:
-            peers_list = peers_to_use
+            peers_list = list(peers_to_use) if peers_to_use else []
         
         for peer in peers_list:
             args.extend(["-p", peer])
         
-        logger.info(f"启动Easytier虚拟网络（使用节点：{len(peers_list)}个）...")
+        if peers_list:
+            logger.info(f"启动Easytier虚拟网络（使用节点：{len(peers_list)}个）...")
+        else:
+            logger.info("启动Easytier虚拟网络（不使用节点，局域网模式）...")
         
         # 启动进程
         self.process = ProcessHelper.start_process(

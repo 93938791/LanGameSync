@@ -572,11 +572,16 @@ class MainWindow(QMainWindow):
         
         # 获取选中的节点
         selected_peer = None
-        if self.node_combo.currentIndex() > 0:
+        use_peer = True
+        if self.node_combo.currentIndex() == 0:
+            # 选择的是"不使用节点"
+            use_peer = False
+        elif self.node_combo.currentIndex() > 0:
             peer_list = self.config_data.get("peer_list", [])
             peer_index = self.node_combo.currentIndex() - 1
             if peer_index < len(peer_list):
                 selected_peer = peer_list[peer_index].get("peers", "")
+                use_peer = True
         
         # 保存配置
         self.config_data["network"] = {
@@ -586,7 +591,7 @@ class MainWindow(QMainWindow):
         ConfigCache.save(self.config_data)
         
         # 启动连接线程
-        self.connect_thread = ConnectThread(self.controller, room_name, password, selected_peer)
+        self.connect_thread = ConnectThread(self.controller, room_name, password, selected_peer, use_peer)
         self.connect_thread.connected.connect(self.on_connected)
         self.connect_thread.progress.connect(self.on_connect_progress)
         self.connect_thread.start()
@@ -726,8 +731,8 @@ class MainWindow(QMainWindow):
         if not self.is_connected:
             return
         
-        # TODO: 从 main_window_v2.py 迁移监控逻辑
-        pass
+        # 更新客户端列表
+        self.update_clients_list()
     
     # ==================== 窗口事件 ====================
     
