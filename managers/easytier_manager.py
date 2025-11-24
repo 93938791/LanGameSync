@@ -20,31 +20,41 @@ class EasytierManager:
         self.virtual_ip = None
         self.peer_ips = []
     
-    def start(self):
-        """启动Easytier虚拟网络"""
+    def start(self, custom_peers=None, network_name=None, network_secret=None):
+        """启动Easytier虚拟网络
+        
+        Args:
+            custom_peers: 自定义节点列表，如果为None则使用默认公共节点
+            network_name: 网络名称，如果为None则使用配置文件中的名称
+            network_secret: 网络密码，如果为None则使用配置文件中的密码
+        """
         if not Config.EASYTIER_BIN.exists():
             raise FileNotFoundError(f"Easytier程序不存在: {Config.EASYTIER_BIN}")
         
-        # Easytier启动参数（按照官方文档）
-        # --no-tun: 无TUN模式，不需要管理员权限
-        # --socks5: 启用SOCKS5代理服务器，格式为 --socks5 端口号
-        # -d: DHCP模式，自动分配虚拟IP
-        # --network-name: 网络名称（所有设备必须相同）
-        # --network-secret: 网络密钥（所有设备必须相同）
-        # -p: 公共节点，用于NAT穿透和中继
+        # 使用传入的参数或默认配置
+        net_name = network_name if network_name else Config.EASYTIER_NETWORK_NAME
+        net_secret = network_secret if network_secret else Config.EASYTIER_NETWORK_SECRET
+        peers_to_use = custom_peers if custom_peers else Config.EASYTIER_PUBLIC_PEERS
+        
         args = [
-            "--no-tun",  # 无TUN模式，免ROOT权限
-            "--socks5", "1080",  # 启用SOCKS5代理，监听1080端口
-            "-d",  # DHCP自动分配IP
-            "--network-name", Config.EASYTIER_NETWORK_NAME,
-            "--network-secret", Config.EASYTIER_NETWORK_SECRET
+            "--no-tun",
+            "--socks5", "1080",
+            "-d",
+            "--network-name", net_name,
+            "--network-secret", net_secret
         ]
         
-        # 添加公共节点（实现跨网络连接）
-        for peer in Config.EASYTIER_PUBLIC_PEERS:
+        # 添加节点
+        if isinstance(peers_to_use, str):
+            # 如果是单个字符串，按逗号分割
+            peers_list = [p.strip() for p in peers_to_use.split(',') if p.strip()]
+        else:
+            peers_list = peers_to_use
+        
+        for peer in peers_list:
             args.extend(["-p", peer])
         
-        logger.info(f"启动Easytier虚拟网络（使用公共节点：{len(Config.EASYTIER_PUBLIC_PEERS)}个）...")
+        logger.info(f"启动Easytier虚拟网络（使用节点：{len(peers_list)}个）...")
         
         # 启动进程
         self.process = ProcessHelper.start_process(
@@ -53,11 +63,11 @@ class EasytierManager:
             hide_window=True
         )
         
-        # 等待虚拟网络初始化并分配IP（增加等待时间和重试）
+        # 等待虚拟网络初始化并分配IP
         logger.info("等待虚拟IP分配...")
         max_retries = 10
         for i in range(max_retries):
-            time.sleep(2)  # 每次等待2秒
+            time.sleep(2)
             self.virtual_ip = self._get_virtual_ip()
             if self.virtual_ip and self.virtual_ip not in ["waiting...", "unknown"]:
                 logger.info(f"虚拟IP分配成功: {self.virtual_ip}")
@@ -70,6 +80,20 @@ class EasytierManager:
         logger.info(f"Easytier启动成功，虚拟IP: {self.virtual_ip}")
         
         return True
+    
+    def start_with_peer(self, peer, network_name, network_secret):
+        """使用自定义节点启动
+        
+        Args:
+            peer: 节点地址
+            network_name: 网络名称
+            network_secret: 网络密码
+        """
+        return self.start(
+            custom_peers=[peer] if peer else None,
+            network_name=network_name,
+            network_secret=network_secret
+        )
     
     def stop(self):
         """停止Easytier服务"""
