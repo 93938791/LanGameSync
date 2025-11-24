@@ -247,7 +247,6 @@ class MainWindow(QMainWindow):
     
     def create_network_page(self):
         """创建网络管理页面"""
-        # TODO: 从 main_window_v2.py 迁移完整功能
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(20, 15, 20, 20)
@@ -255,11 +254,16 @@ class MainWindow(QMainWindow):
         
         # 网络管理区域
         network_group = QGroupBox("网络管理")
+        network_group.setObjectName("networkGroup")
         network_layout = QVBoxLayout()
+        network_layout.setSpacing(12)
+        network_layout.setContentsMargins(20, 20, 20, 20)
         
         # 房间号输入
         room_layout = QHBoxLayout()
-        room_layout.addWidget(QLabel("房间号:"))
+        room_label = QLabel("房间号:")
+        room_label.setMinimumWidth(80)
+        room_layout.addWidget(room_label)
         self.room_input = QLineEdit()
         self.room_input.setPlaceholderText("输入房间号")
         room_layout.addWidget(self.room_input)
@@ -267,7 +271,9 @@ class MainWindow(QMainWindow):
         
         # 密码输入
         pwd_layout = QHBoxLayout()
-        pwd_layout.addWidget(QLabel("密码:"))
+        pwd_label = QLabel("密码:")
+        pwd_label.setMinimumWidth(80)
+        pwd_layout.addWidget(pwd_label)
         self.password_input = QLineEdit()
         self.password_input.setPlaceholderText("输入密码")
         self.password_input.setEchoMode(QLineEdit.Password)
@@ -276,6 +282,8 @@ class MainWindow(QMainWindow):
         
         # 连接按钮
         self.connect_btn = QPushButton("连接到网络")
+        self.connect_btn.setObjectName("connectBtn")
+        self.connect_btn.setMinimumHeight(45)
         self.connect_btn.clicked.connect(self.connect_to_network)
         network_layout.addWidget(self.connect_btn)
         
@@ -284,16 +292,37 @@ class MainWindow(QMainWindow):
         
         # 客户端信息
         clients_group = QGroupBox("已连接的客户端")
+        clients_group.setObjectName("clientsGroup")
         clients_layout = QVBoxLayout()
+        clients_layout.setContentsMargins(15, 15, 15, 15)
+        
         self.clients_table = QTableWidget()
         self.clients_table.setColumnCount(2)
         self.clients_table.setHorizontalHeaderLabels(["设备名", "虚拟IP"])
+        self.clients_table.horizontalHeader().setStretchLastSection(True)
+        self.clients_table.verticalHeader().setVisible(False)
+        self.clients_table.setStyleSheet("""
+            QTableWidget {
+                background: #ffffff;
+                border: none;
+                gridline-color: #f0f0f0;
+            }
+            QHeaderView::section {
+                background: #f8f8f8;
+                padding: 8px;
+                border: none;
+                border-bottom: 1px solid #e0e0e0;
+                font-weight: bold;
+                color: #666666;
+            }
+        """)
         clients_layout.addWidget(self.clients_table)
         clients_group.setLayout(clients_layout)
         layout.addWidget(clients_group)
         
         # 状态栏
         self.status_label = QLabel("状态: 未连接")
+        self.status_label.setObjectName("statusLabel")
         self.status_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.status_label)
         
@@ -301,13 +330,60 @@ class MainWindow(QMainWindow):
     
     def create_game_page(self):
         """创建游戏管理页面"""
-        # TODO: 从 main_window_v2.py 迁移完整功能
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(20, 15, 20, 20)
+        layout.setSpacing(15)
+        
+        # 标题和操作按钮
+        header_layout = QHBoxLayout()
+        title_label = QLabel("游戏列表")
+        title_label.setStyleSheet("font-size: 18px; font-weight: bold; color: #333333;")
+        header_layout.addWidget(title_label)
+        header_layout.addStretch()
+        
+        add_btn = QPushButton("+ 添加游戏")
+        add_btn.setStyleSheet("""
+            QPushButton {
+                background: #07c160;
+                color: #ffffff;
+                border: none;
+                border-radius: 4px;
+                padding: 8px 20px;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background: #06ae56;
+            }
+        """)
+        header_layout.addWidget(add_btn)
+        layout.addLayout(header_layout)
         
         # 游戏列表
         self.game_list = QListWidget()
+        self.game_list.setStyleSheet("""
+            QListWidget {
+                background: #ffffff;
+                border: 1px solid #e0e0e0;
+                border-radius: 8px;
+                padding: 10px;
+            }
+            QListWidget::item {
+                padding: 15px;
+                border-radius: 6px;
+                margin: 4px;
+                border: 1px solid #f0f0f0;
+            }
+            QListWidget::item:hover {
+                background: #f8f8f8;
+                border: 1px solid #e0e0e0;
+            }
+            QListWidget::item:selected {
+                background: #e8f5e9;
+                border: 1px solid #07c160;
+                color: #333333;
+            }
+        """)
         layout.addWidget(self.game_list)
         
         # 加载游戏列表
