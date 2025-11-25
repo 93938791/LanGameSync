@@ -1111,9 +1111,31 @@ class GameInterface(QWidget):
             folder_id = f"game-{self.selected_game.get('type', 'unknown')}-{self.selected_game.get('version', 'default')}".replace(' ', '-').replace('.', '-')
             folder_label = f"{game_name} - 存档同步"
             
-            # 获取已连接的设备列表
-            connections = self.parent_window.syncthing_manager.get_connections()
-            if not connections or not connections.get('connections'):
+            # 获取Syncthing配置中的所有设备（不管是否已连接）
+            config = self.parent_window.syncthing_manager.get_config()
+            if not config:
+                InfoBar.error(
+                    title='错误',
+                    content="无法获取Syncthing配置",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
+                return
+                        
+            # 获取所有设备ID（除了本机）
+            my_device_id = self.parent_window.syncthing_manager.device_id
+            device_ids = []
+            for device in config.get('devices', []):
+                dev_id = device.get('deviceID')
+                if dev_id and dev_id != my_device_id:
+                    device_ids.append(dev_id)
+                        
+            logger.info(f"将同步文件夹共享给 {len(device_ids)} 个设备")
+                        
+            if len(device_ids) == 0:
                 InfoBar.warning(
                     title='提示',
                     content="没有检测到其他设备，请确保其他玩家已连接到同一房间",
@@ -1123,10 +1145,6 @@ class GameInterface(QWidget):
                     duration=3000,
                     parent=self
                 )
-                device_ids = []
-            else:
-                device_ids = [dev_id for dev_id in connections['connections'].keys()]
-                logger.info(f"检测到 {len(device_ids)} 个设备")
             
             # 添加同步文件夹（设置为非暂停状态，立即启动同步）
             success = self.parent_window.syncthing_manager.add_folder(

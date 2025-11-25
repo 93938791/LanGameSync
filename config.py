@@ -36,6 +36,7 @@ class Config:
     EASYTIER_CONFIG = CONFIG_DIR / "easytier.conf"
     EASYTIER_NETWORK_NAME = "langamesync-network"
     EASYTIER_NETWORK_SECRET = "langamesync-2025"
+    EASYTIER_SOCKS5_PORT = 1080  # Easytier SOCKS5代理端口
     # 公共节点（用于NAT穿透，实现跨网络连接）
     EASYTIER_PUBLIC_PEERS = [
         "tcp://39.104.85.218:11010",  # 自建节点 - TCP

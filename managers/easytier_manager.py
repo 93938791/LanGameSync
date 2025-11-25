@@ -49,6 +49,7 @@ class EasytierManager:
         args = [
             "--no-tun",
             "--socks5", "1080",
+            "--rpc-portal", "127.0.0.1:15888",  # 显式指定 RPC 端口，供 easytier-cli 连接
             "-d",
             "--network-name", net_name,
             "--network-secret", net_secret
@@ -147,7 +148,9 @@ class EasytierManager:
             )
             
             if result.returncode != 0:
-                logger.warning(f"easytier-cli peer 执行失败")
+                logger.warning(f"easytier-cli peer 执行失败: {result.stderr}")
+                logger.debug(f"stderr 内容: {result.stderr}")
+                logger.debug(f"stdout 内容: {result.stdout}")
                 return "unknown"
             
             # 输出原始数据用于调试

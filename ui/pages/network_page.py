@@ -29,6 +29,9 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
     def __init__(self, parent):
         super().__init__()
         self.parent_window = parent
+        self.device_widgets = []  # 存储设备卡片的列表
+        self.discovery_thread = None  # 设备发现线程
+        self.discovery_running = False  # 设备发现线程运行标志
         
         # 设置全局唯一的对象名称（必须）
         self.setObjectName("networkInterface")
@@ -248,15 +251,18 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
         
         # 根据延迟选择图标
         if is_self:
-            icon_path = "resources/icons/good.png"  # 本机默认良好
+            icon_name = "good.png"  # 本机默认良好
         elif latency == 0 or latency < 50:
-            icon_path = "resources/icons/fluid.png"  # 流畅
+            icon_name = "fluid.png"  # 流畅
         elif latency < 100:
-            icon_path = "resources/icons/good.png"  # 良好
+            icon_name = "good.png"  # 良好
         elif latency < 200:
-            icon_path = "resources/icons/laggy.png"  # 卡顿
+            icon_name = "laggy.png"  # 卡顿
         else:
-            icon_path = "resources/icons/drop.png"  # 断开/极差
+            icon_name = "drop.png"  # 断开/极差
+        
+        # 使用Config获取正确的资源路径
+        icon_path = str(Config.RESOURCES_DIR / "icons" / icon_name)
         
         # 加载图片
         if os.path.exists(icon_path):
@@ -264,6 +270,7 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
             icon_label.setPixmap(pixmap.scaled(48, 48, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         else:
             # 如果图片不存在，使用表情作为后备
+            logger.warning(f"找不到图标文件: {icon_path}")
             if is_self:
                 emoji = "💻"
             elif latency < 50:
@@ -404,6 +411,9 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
             self.parent_window.last_peer_count = 0
             self.update_clients_list()
             
+            # 启动设备自动发现线程（定期检查并添加新设备到Syncthing）
+            self._start_device_discovery_thread()
+            
             InfoBar.success(
                 title='连接成功',
                 content=f"已连接到虚拟网络，IP: {message}",
@@ -454,6 +464,9 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
     def disconnect_network(self):
         """断开网络连接"""
         try:
+            # 停止设备发现线程
+            self._stop_device_discovery_thread()
+            
             # TODO: 实现断开逻辑
             self.parent_window.is_connected = False
             self.current_ip_label.setText("当前 IP: 未连接")
@@ -580,3 +593,105 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
         """显示所有设备"""
         dialog = DeviceListDialog(self.parent_window, self.parent_window.controller)
         dialog.exec_()
+    
+    def _start_device_discovery_thread(self):
+        """启动设备自动发现线程（定期扫描并添加新设备到Syncthing）"""
+        if self.discovery_running:
+            logger.info("设备发现线程已经在运行")
+            return
+        
+        import threading
+        import time
+        
+        def discovery_loop():
+            """设备发现循环线程"""
+            logger.info("启动设备自动发现线程...")
+            
+            while self.discovery_running:
+                try:
+                    if not self.parent_window.is_connected:
+                        # 如果断开连接，停止扫描
+                        logger.info("网络已断开，停止设备发现")
+                        break
+                    
+                    # 获取对等设备列表
+                    peers = self.parent_window.controller.easytier.discover_peers(timeout=3)
+                    
+                    my_syncthing_id = self.parent_window.syncthing_manager.device_id
+                    my_ip = self.parent_window.controller.easytier.virtual_ip or "unknown"
+                    
+                    # 遍历所有对等设备
+                    for peer in peers:
+                        ipv4 = peer.get('ipv4', '')
+                        hostname = peer.get('hostname', 'Unknown')
+                        
+                        # 过滤掉本机
+                        if not ipv4 or ipv4 == my_ip or hostname == Config.HOSTNAME:
+                            continue
+                        
+                        # 尝试获取远程设备的Syncthing ID
+                        device_id = self._get_remote_syncthing_id(ipv4)
+                        
+                        if device_id and device_id != my_syncthing_id:
+                            # 添加设备到Syncthing（如果已存在则不会重复添加）
+                            success = self.parent_window.syncthing_manager.add_device(device_id, hostname)
+                            if success:
+                                logger.info(f"自动发现并添加设备: {hostname} ({device_id[:7]}...) - {ipv4}")
+                                
+                                # 将设备添加到所有正在同步的文件夹
+                                self._add_device_to_active_folders(device_id)
+                    
+                    # 每10秒扫描一次
+                    time.sleep(10)
+                    
+                except Exception as e:
+                    logger.error(f"设备发现线程错误: {e}")
+                    time.sleep(5)  # 出错后等待更长时间
+            
+            logger.info("设备自动发现线程已停止")
+        
+        self.discovery_running = True
+        self.discovery_thread = threading.Thread(target=discovery_loop, daemon=True)
+        self.discovery_thread.start()
+        logger.info("设备自动发现线程已启动")
+    
+    def _stop_device_discovery_thread(self):
+        """停止设备自动发现线程"""
+        if self.discovery_running:
+            self.discovery_running = False
+            if self.discovery_thread:
+                self.discovery_thread.join(timeout=2)
+                self.discovery_thread = None
+            logger.info("设备自动发现线程已停止")
+    
+    def _add_device_to_active_folders(self, device_id):
+        """将新发现的设备添加到所有正在同步的文件夹"""
+        try:
+            config = self.parent_window.syncthing_manager.get_config()
+            if not config:
+                return
+            
+            folders = config.get('folders', [])
+            updated = False
+            
+            for folder in folders:
+                # 只处理未暂停的文件夹
+                if folder.get('paused', False):
+                    continue
+                
+                # 检查设备是否已在文件夹中
+                folder_devices = folder.get('devices', [])
+                device_ids = [d['deviceID'] for d in folder_devices]
+                
+                if device_id not in device_ids:
+                    # 添加设备到文件夹
+                    folder_devices.append({'deviceID': device_id})
+                    folder['devices'] = folder_devices
+                    updated = True
+                    logger.info(f"将设备 {device_id[:7]}... 添加到文件夹 {folder.get('id')}")
+            
+            if updated:
+                self.parent_window.syncthing_manager.set_config(config)
+                logger.info("已更新Syncthing配置，新设备已添加到同步文件夹")
+        except Exception as e:
+            logger.error(f"添加设备到文件夹失败: {e}")
