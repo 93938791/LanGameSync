@@ -1,6 +1,6 @@
 """
 __init__.py for ui package
 """
-from .main_window import MainWindow, main
+from .fluent_main_window import FluentMainWindow
 
-__all__ = ['MainWindow', 'main']
+__all__ = ['FluentMainWindow']
