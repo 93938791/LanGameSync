@@ -1,21 +1,21 @@
 """
-Nuitka打包脚本 - 避免杀毒软件误报
+Nuitka快速打包脚本 - 适合开发测试
+相比正式打包,速度提升3-5倍,但文件体积稍大
 """
 import subprocess
 import sys
 import os
 
-def build_with_nuitka():
-    """使用Nuitka编译打包"""
+def build_with_nuitka_fast():
+    """使用Nuitka快速编译打包(开发模式)"""
     
-    # Nuitka编译参数
+    # Nuitka编译参数 - 快速模式
     nuitka_args = [
         sys.executable,
         "-m", "nuitka",
         
         # 基本配置
-        "--standalone",  # 独立可执行文件模式
-        "--onefile",  # 单文件模式
+        "--standalone",  # 独立可执行文件模式(不用onefile,快很多)
         "--windows-disable-console",  # 隐藏控制台窗口
         
         # 图标配置
@@ -23,7 +23,6 @@ def build_with_nuitka():
         
         # 输出配置
         "--output-dir=dist",
-        "--output-filename=花韵连萌.exe",
         
         # 包含资源文件
         "--include-data-dir=resources=resources",
@@ -31,32 +30,38 @@ def build_with_nuitka():
         # PyQt5相关配置
         "--enable-plugin=pyqt5",
         
-        # 性能优化 - 加速编译
-        "--lto=no",  # 禁用链接时优化,大幅加速(牺牲5-10%性能)
-        "--jobs=8",  # 增加并行编译核心数
+        # 快速编译优化
+        "--lto=no",  # 禁用LTO,大幅加速
+        "--jobs=8",  # 8核并行
         
-        # 排除不需要的模块 - 大幅减少编译时间
-        "--nofollow-import-to=scipy",  # 排除scipy(科学计算库,项目未使用)
-        "--nofollow-import-to=matplotlib",  # 排除matplotlib
-        "--nofollow-import-to=pandas",  # 排除pandas
-        "--nofollow-import-to=tkinter",  # 排除tkinter
-        "--nofollow-import-to=test",  # 排除测试模块
-        "--nofollow-import-to=unittest",  # 排除单元测试
+        # 排除不需要的大型库 - 关键加速点
+        "--nofollow-import-to=scipy",
+        "--nofollow-import-to=matplotlib",
+        "--nofollow-import-to=pandas",
+        "--nofollow-import-to=tkinter",
+        "--nofollow-import-to=test",
+        "--nofollow-import-to=unittest",
+        "--nofollow-import-to=distutils",
         
-        # 避免误报的关键配置
-        "--assume-yes-for-downloads",  # 自动下载依赖
-        "--mingw64",  # 使用MinGW编译器（更干净的二进制）
+        # 快速模式 - 减少优化
+        "--python-flag=no_asserts",  # 禁用断言
+        
+        # 避免误报
+        "--assume-yes-for-downloads",
+        "--mingw64",
         
         # 显示进度
         "--show-progress",
-        "--show-memory",
         
         # 入口文件
         "main.py"
     ]
     
     print("=" * 60)
-    print("开始使用Nuitka编译打包...")
+    print("🚀 快速编译模式 - 适合开发测试")
+    print("=" * 60)
+    print("优势: 速度快3-5倍")
+    print("劣势: 文件夹形式(非单exe), 体积稍大")
     print("=" * 60)
     print("\n编译命令:")
     print(" ".join(nuitka_args))
@@ -68,8 +73,9 @@ def build_with_nuitka():
         
         if result.returncode == 0:
             print("\n" + "=" * 60)
-            print("✅ 编译成功!")
-            print("可执行文件位置: dist\\花韵连萌.exe")
+            print("✅ 快速编译成功!")
+            print("可执行文件位置: dist\\main.dist\\main.exe")
+            print("提示: 整个 dist\\main.dist 文件夹需要一起分发")
             print("=" * 60)
         else:
             print("\n❌ 编译失败")
@@ -84,4 +90,4 @@ def build_with_nuitka():
         sys.exit(1)
 
 if __name__ == "__main__":
-    build_with_nuitka()
+    build_with_nuitka_fast()
