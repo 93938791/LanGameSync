@@ -44,6 +44,24 @@ class ConfigCache:
             if cls.CACHE_FILE.exists():
                 with open(cls.CACHE_FILE, 'r', encoding='utf-8') as f:
                     config = json.load(f)
+                
+                # 兼容旧版本配置：如果没有network字段，但有顶层的room_name/password
+                if 'network' not in config and ('room_name' in config or 'password' in config):
+                    config['network'] = {
+                        'room_name': config.pop('room_name', ''),
+                        'password': config.pop('password', '')
+                    }
+                    # 保存迁移后的配置
+                    cls.save(config)
+                    logger.info("已迁移旧版本配置到network字段")
+                
+                # 确保network字段存在
+                if 'network' not in config:
+                    config['network'] = {
+                        'room_name': '',
+                        'password': ''
+                    }
+                
                 logger.info("配置已加载")
                 return config
         except Exception as e:
@@ -53,6 +71,5 @@ class ConfigCache:
         return {
             "room_name": "langamesync-network",
             "password": "langamesync-2025",
-            "nickname": "",
             "last_folders": []
         }

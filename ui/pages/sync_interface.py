@@ -1,0 +1,298 @@
+"""
+存档同步界面
+展示Syncthing同步目录列表和状态
+"""
+from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QTableWidgetItem
+from PyQt5.QtGui import QColor
+from qfluentwidgets import (
+    ScrollArea, CardWidget, BodyLabel, SubtitleLabel,
+    PushButton, PrimaryPushButton, TableWidget, InfoBar, InfoBarPosition
+)
+from utils.logger import Logger
+
+logger = Logger().get_logger("SyncInterface")
+
+
+class SyncInterface(ScrollArea):
+    """存档同步界面"""
+    
+    def __init__(self, parent_window):
+        super().__init__()
+        self.parent_window = parent_window
+        
+        # 设置滚动区域样式
+        self.setObjectName("syncInterface")
+        self.setWidgetResizable(True)
+        self.setStyleSheet("QScrollArea {border: none; background: transparent;}")
+        
+        # 创建主容器
+        self.view = QWidget()
+        self.view.setStyleSheet("background: transparent;")
+        self.setWidget(self.view)
+        
+        # 创建布局
+        self.vBoxLayout = QVBoxLayout(self.view)
+        self.vBoxLayout.setContentsMargins(30, 30, 30, 30)
+        self.vBoxLayout.setSpacing(20)
+        
+        # 初始化UI
+        self.init_ui()
+    
+    def init_ui(self):
+        """初始化UI"""
+        # 标题
+        title = SubtitleLabel("存档同步")
+        title.setObjectName("pageTitle")
+        title.setStyleSheet("background: transparent; border: none;")
+        self.vBoxLayout.addWidget(title)
+        
+        # Syncthing 同步卡片（让卡片占满剩余空间）
+        sync_card = self.create_sync_card()
+        self.vBoxLayout.addWidget(sync_card, 1)  # stretch=1，让卡片占据剩余空间
+    
+    def create_sync_card(self):
+        """创建同步目录卡片"""
+        card = CardWidget()
+        card.setStyleSheet("""
+            CardWidget {
+                background: white;
+                border: none;
+                border-radius: 8px;
+            }
+        """)
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(24, 24, 24, 24)
+        card_layout.setSpacing(20)
+        
+        # 标题
+        title = BodyLabel("🔄 Syncthing 同步目录")
+        title.setStyleSheet("font-size: 15px; font-weight: 600; background: transparent; border: none;")
+        card_layout.addWidget(title)
+        
+        # 同步文件夹表格
+        self.sync_folders_table = TableWidget()
+        self.sync_folders_table.setColumnCount(4)
+        self.sync_folders_table.setHorizontalHeaderLabels(["文件夹ID", "路径", "状态", "设备数"])
+        
+        # 设置表格样式：无边框、透明背景、文字无边框
+        self.sync_folders_table.setStyleSheet("""
+            TableWidget {
+                background: white;
+                border: none;
+                border-radius: 4px;
+            }
+            QTableWidget::item {
+                border: none;
+                padding: 8px;
+                background: transparent;
+            }
+            QTableWidget::item:selected {
+                background: #f0f0f0;
+            }
+            QHeaderView::section {
+                background: #f5f5f5;
+                border: none;
+                padding: 8px;
+                font-weight: 600;
+            }
+        """)
+        
+        # 让表格自动伸展填充空间
+        self.sync_folders_table.setMinimumHeight(300)
+        card_layout.addWidget(self.sync_folders_table, 1)  # stretch=1，让表格占据剩余空间
+        
+        # 空状态提示（初始显示）
+        self.empty_hint = BodyLabel("暂无同步目录\n\n请先连接到网络后点击刷新按钮")
+        self.empty_hint.setAlignment(Qt.AlignCenter)
+        self.empty_hint.setStyleSheet("""
+            QLabel {
+                color: #999;
+                font-size: 14px;
+                background: transparent;
+                border: none;
+                padding: 60px;
+            }
+        """)
+        card_layout.addWidget(self.empty_hint)
+        self.sync_folders_table.hide()  # 初始隐藏表格
+        
+        # 按钮行
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        
+        pause_btn = PushButton("⏸️ 暂停所有")
+        pause_btn.setFixedWidth(120)
+        pause_btn.clicked.connect(self.pause_all_sync)
+        btn_row.addWidget(pause_btn)
+        
+        refresh_btn = PrimaryPushButton("🔄 刷新")
+        refresh_btn.setFixedWidth(120)
+        refresh_btn.clicked.connect(self.refresh_sync)
+        btn_row.addWidget(refresh_btn)
+        
+        card_layout.addLayout(btn_row)
+        
+        return card
+    
+    def pause_all_sync(self):
+        """暂停所有同步"""
+        try:
+            if not hasattr(self.parent_window, 'syncthing_manager') or not self.parent_window.syncthing_manager:
+                InfoBar.warning(
+                    title='警告',
+                    content="请先连接到网络",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
+                return
+            
+            config = self.parent_window.syncthing_manager.get_config()
+            if not config:
+                InfoBar.error(
+                    title='错误',
+                    content="无法获取Syncthing配置",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
+                return
+            
+            folders = config.get('folders', [])
+            paused_count = 0
+            
+            for folder in folders:
+                if not folder.get('paused', False):
+                    folder['paused'] = True
+                    paused_count += 1
+            
+            if paused_count > 0:
+                self.parent_window.syncthing_manager.set_config(config)
+                InfoBar.success(
+                    title='成功',
+                    content=f"已暂停 {paused_count} 个同步文件夹",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
+                # 刷新列表
+                self.refresh_sync()
+            else:
+                InfoBar.info(
+                    title='提示',
+                    content="所有文件夹已经是暂停状态",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
+        except Exception as e:
+            logger.error(f"暂停同步失败: {e}")
+            InfoBar.error(
+                title='错误',
+                content=f"暂停失败: {str(e)}",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2000,
+                parent=self
+            )
+    
+    def refresh_sync(self):
+        """刷新同步列表"""
+        try:
+            if not hasattr(self.parent_window, 'syncthing_manager') or not self.parent_window.syncthing_manager:
+                InfoBar.warning(
+                    title='警告',
+                    content="请先连接到网络",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
+                return
+            
+            # 清空表格
+            self.sync_folders_table.setRowCount(0)
+            
+            # 获取配置
+            config = self.parent_window.syncthing_manager.get_config()
+            if not config:
+                return
+            
+            # 获取连接状态
+            connections = self.parent_window.syncthing_manager.get_connections()
+            connected_devices = set()
+            if connections and connections.get('connections'):
+                for dev_id, conn_info in connections['connections'].items():
+                    if conn_info.get('connected'):
+                        connected_devices.add(dev_id)
+            
+            # 填充表格
+            folders = config.get('folders', [])
+            
+            # 根据是否有数据显示不同内容
+            if len(folders) == 0:
+                # 无数据，显示空状态提示
+                self.sync_folders_table.hide()
+                self.empty_hint.show()
+            else:
+                # 有数据，显示表格
+                self.empty_hint.hide()
+                self.sync_folders_table.show()
+                
+                for folder in folders:
+                    row = self.sync_folders_table.rowCount()
+                    self.sync_folders_table.insertRow(row)
+                    
+                    # 文件夹ID
+                    id_item = QTableWidgetItem(folder.get('id', ''))
+                    id_item.setTextAlignment(Qt.AlignCenter)
+                    self.sync_folders_table.setItem(row, 0, id_item)
+                    
+                    # 路径
+                    path_item = QTableWidgetItem(folder.get('path', ''))
+                    self.sync_folders_table.setItem(row, 1, path_item)
+                    
+                    # 状态
+                    status = "⏸️ 暂停" if folder.get('paused', False) else "✅ 同步中"
+                    status_item = QTableWidgetItem(status)
+                    status_item.setTextAlignment(Qt.AlignCenter)
+                    self.sync_folders_table.setItem(row, 2, status_item)
+                    
+                    # 设备数（只统计已连接的）
+                    folder_devices = [d['deviceID'] for d in folder.get('devices', [])]
+                    connected_count = sum(1 for dev_id in folder_devices if dev_id in connected_devices)
+                    device_item = QTableWidgetItem(f"{connected_count}/{len(folder_devices)}")
+                    device_item.setTextAlignment(Qt.AlignCenter)
+                    self.sync_folders_table.setItem(row, 3, device_item)
+                
+                # 调整列宽
+                from PyQt5.QtWidgets import QHeaderView
+                self.sync_folders_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+                self.sync_folders_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+                self.sync_folders_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+                self.sync_folders_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+                
+                InfoBar.success(
+                    title='刷新',
+                    content=f"已刷新 {len(folders)} 个同步文件夹",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=1500,
+                    parent=self
+                )
+        except Exception as e:
+            logger.error(f"刷新同步列表失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())

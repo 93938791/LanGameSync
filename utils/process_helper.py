@@ -4,9 +4,16 @@
 import subprocess
 import psutil
 import time
+import sys
 from utils.logger import Logger
 
 logger = Logger().get_logger("ProcessHelper")
+
+# Windows平台的CREATE_NO_WINDOW常量
+if sys.platform == 'win32':
+    CREATE_NO_WINDOW = 0x08000000
+else:
+    CREATE_NO_WINDOW = 0
 
 class ProcessHelper:
     """进程管理辅助类"""
@@ -43,7 +50,7 @@ class ProcessHelper:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             startupinfo=startup_info,
-            creationflags=subprocess.CREATE_NO_WINDOW if hide_window else 0
+            creationflags=CREATE_NO_WINDOW if hide_window else 0
         )
         
         return process
@@ -77,14 +84,31 @@ class ProcessHelper:
     @staticmethod
     def kill_by_port(port):
         """根据端口号杀死占用的进程"""
-        for conn in psutil.net_connections():
-            if conn.laddr.port == port:
-                try:
-                    proc = psutil.Process(conn.pid)
-                    logger.info(f"杀死占用端口 {port} 的进程: {proc.name()} (PID: {conn.pid})")
-                    proc.kill()
-                except Exception as e:
-                    logger.error(f"杀死进程失败: {e}")
+        killed_count = 0
+        try:
+            for conn in psutil.net_connections():
+                if conn.laddr.port == port:
+                    try:
+                        proc = psutil.Process(conn.pid)
+                        proc_name = proc.name()
+                        logger.info(f"杀死占用端口 {port} 的进程: {proc_name} (PID: {conn.pid})")
+                        proc.kill()
+                        proc.wait(timeout=3)  # 等待进程终止
+                        killed_count += 1
+                    except psutil.NoSuchProcess:
+                        logger.warning(f"进程 PID {conn.pid} 已不存在")
+                    except psutil.TimeoutExpired:
+                        logger.warning(f"进程 PID {conn.pid} 未响应终止")
+                    except Exception as e:
+                        logger.error(f"杀死进程 PID {conn.pid} 失败: {e}")
+        except Exception as e:
+            logger.error(f"扫描端口失败: {e}")
+        
+        if killed_count > 0:
+            logger.info(f"共杀死 {killed_count} 个占用端口 {port} 的进程")
+            time.sleep(1)  # 等待端口释放
+        
+        return killed_count
     
     @staticmethod
     def wait_for_port(port, timeout=30):

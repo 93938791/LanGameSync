@@ -9,7 +9,7 @@ class Config:
     """全局配置类"""
     
     # 应用信息
-    APP_NAME = "LanGameSync"
+    APP_NAME = "花韵连萌"
     APP_VERSION = "1.0.0"
     
     # 路径配置
@@ -38,8 +38,8 @@ class Config:
     EASYTIER_NETWORK_SECRET = "langamesync-2025"
     # 公共节点（用于NAT穿透，实现跨网络连接）
     EASYTIER_PUBLIC_PEERS = [
-        "tcp://public.easytier.cn:11010",
-        "udp://public.easytier.cn:11010"
+        "tcp://39.104.85.218:11010",  # 自建节点 - TCP
+        "udp://39.104.85.218:11010"   # 自建节点 - UDP
     ]
     
     # 同步配置

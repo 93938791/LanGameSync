@@ -5,6 +5,7 @@ Easytier管理模块
 import json
 import time
 import subprocess
+import sys
 from pathlib import Path
 from config import Config
 from utils.logger import Logger
@@ -86,8 +87,12 @@ class EasytierManager:
                 break
             logger.info(f"第{i+1}/{max_retries}次尝试，当前状态: {self.virtual_ip}")
         
-        if self.virtual_ip in ["waiting...", "unknown"]:
-            logger.warning("虚拟IP分配超时，但继续运行")
+        # 检查虚拟IP是否分配成功
+        if self.virtual_ip in ["waiting...", "unknown", None]:
+            logger.error(f"虚拟IP分配失败，当前状态: {self.virtual_ip}")
+            # 停止进程
+            self.stop()
+            return False
         
         logger.info(f"Easytier启动成功，虚拟IP: {self.virtual_ip}")
         
@@ -122,12 +127,23 @@ class EasytierManager:
                 logger.warning(f"easytier-cli 不存在: {Config.EASYTIER_CLI}")
                 return "unknown"
             
+            # 需要隐藏窗口的startupinfo
+            startupinfo = None
+            creationflags = 0
+            if sys.platform == 'win32':
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+                creationflags = 0x08000000  # CREATE_NO_WINDOW
+            
             result = subprocess.run(
                 [str(Config.EASYTIER_CLI), "peer"],
                 capture_output=True,
                 text=True,
                 timeout=5,
-                encoding='utf-8'
+                encoding='utf-8',
+                startupinfo=startupinfo,
+                creationflags=creationflags
             )
             
             if result.returncode != 0:
@@ -145,17 +161,13 @@ class EasytierManager:
                     parts = [p.strip() for p in line.split('|')]
                     logger.info(f"Local行分割结果 ({len(parts)}列): {parts}")
                     
-                    if len(parts) > 1:
-                        ip = parts[1].strip()  # 第2列是ipv4
-                        logger.info(f"提取到的IP字段: '{ip}'")
-                        
-                        if ip and '.' in ip and '/' in ip:
-                            # 去掉子网掩码
-                            clean_ip = ip.split('/')[0]
-                            logger.info(f"获取到本机虚拟IP: {clean_ip}")
+                    # 尝试从所有列中查找IP地址
+                    for idx, part in enumerate(parts):
+                        if part and '.' in part and '/' in part:
+                            # 找到了IP地址
+                            clean_ip = part.split('/')[0]
+                            logger.info(f"在第{idx+1}列找到虚拟IP: {clean_ip}")
                             return clean_ip
-                        else:
-                            logger.info(f"IP字段为空或格式不对: '{ip}'")
             
             # 如果没有找到，说明还没分配IP
             logger.info("尚未分配虚拟IP，等待DHCP...")
@@ -178,12 +190,23 @@ class EasytierManager:
                 logger.warning(f"easytier-cli 不存在: {Config.EASYTIER_CLI}")
                 return []
             
+            # 需要隐藏窗口的startupinfo
+            startupinfo = None
+            creationflags = 0
+            if sys.platform == 'win32':
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+                creationflags = 0x08000000  # CREATE_NO_WINDOW
+            
             result = subprocess.run(
                 [str(Config.EASYTIER_CLI), "peer"],
                 capture_output=True,
                 text=True,
                 timeout=timeout,
-                encoding='utf-8'
+                encoding='utf-8',
+                startupinfo=startupinfo,
+                creationflags=creationflags
             )
             
             if result.returncode != 0:
@@ -244,10 +267,11 @@ class EasytierManager:
                 if len(parts) >= 3:
                     ipv4 = parts[1].strip() if len(parts) > 1 else ''  # 第2列是ipv4
                     hostname = parts[2].strip() if len(parts) > 2 else ''  # 第3列是hostname
+                    cost = parts[3].strip() if len(parts) > 3 else ''  # 第4列是cost(Local/p2p)
                     latency = parts[4].strip() if len(parts) > 4 else '0'  # 第5列是latency
                     
-                    # 只处理有IP地址的行（过滤本机Local和公共服务器）
-                    if ipv4 and '.' in ipv4 and '/' in ipv4:
+                    # 只处理有IP地址的行，且排除本机（cost=Local）和公共服务器（无IP）
+                    if ipv4 and '.' in ipv4 and '/' in ipv4 and cost != 'Local':
                         # 去掉子网掩码
                         ipv4_clean = ipv4.split('/')[0]
                         

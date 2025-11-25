@@ -27,9 +27,7 @@ class MessageBox:
     @staticmethod
     def show_question(parent, title, message, buttons=None):
         """显示确认消息框"""
-        if buttons is None:
-            buttons = QMessageBox.Yes | QMessageBox.No
-        return QMessageBox.question(parent, title, message, buttons)
+        return MessageBox._show_question_custom(parent, title, message)
     
     @staticmethod
     def _show_custom(parent, title, message, msg_type="info"):
@@ -150,6 +148,125 @@ class MessageBox:
         main_layout.addWidget(main_container)
         
         return dialog.exec_()
+    
+    @staticmethod
+    def _show_question_custom(parent, title, message):
+        """显示自定义确认消息框"""
+        dialog = QDialog(parent)
+        dialog.setWindowTitle("")
+        dialog.setModal(True)
+        dialog.setFixedWidth(420)
+        
+        # 设置无边框窗口
+        dialog.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
+        dialog.setAttribute(Qt.WA_TranslucentBackground)
+        
+        # 主容器
+        main_container = QWidget()
+        main_container.setStyleSheet("""
+            QWidget {
+                background: #ffffff;
+                border-radius: 8px;
+            }
+        """)
+        
+        container_layout = QVBoxLayout(main_container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(0)
+        
+        # 标题栏
+        title_bar = QWidget()
+        title_bar.setFixedHeight(50)
+        title_bar.setStyleSheet("""
+            QWidget {
+                background: #fafafa;
+                border-top-left-radius: 8px;
+                border-top-right-radius: 8px;
+            }
+        """)
+        
+        title_layout = QHBoxLayout(title_bar)
+        title_layout.setContentsMargins(20, 0, 10, 0)
+        
+        title_label = QLabel(title)
+        title_label.setStyleSheet("color: #2c2c2c; font-size: 15px; font-weight: 600;")
+        title_layout.addWidget(title_label)
+        title_layout.addStretch()
+        
+        container_layout.addWidget(title_bar)
+        
+        # 内容区域
+        content_widget = QWidget()
+        content_widget.setStyleSheet("background: #ffffff;")
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setContentsMargins(30, 30, 30, 25)
+        content_layout.setSpacing(25)
+        
+        # 消息文本
+        msg_label = QLabel(message)
+        msg_label.setWordWrap(True)
+        msg_label.setStyleSheet("""
+            color: #2c2c2c;
+            font-size: 14px;
+            line-height: 1.8;
+        """)
+        content_layout.addWidget(msg_label)
+        
+        # 按钮区域
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(10)
+        btn_layout.addStretch()
+        
+        # 取消按钮
+        cancel_btn = QPushButton("取消")
+        cancel_btn.setFixedSize(100, 38)
+        cancel_btn.setCursor(Qt.PointingHandCursor)
+        cancel_btn.clicked.connect(dialog.reject)
+        cancel_btn.setStyleSheet("""
+            QPushButton {
+                background: #ffffff;
+                color: #666666;
+                border: 1px solid #d0d0d0;
+                border-radius: 4px;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background: #f5f5f5;
+                border: 1px solid #b0b0b0;
+            }
+        """)
+        btn_layout.addWidget(cancel_btn)
+        
+        # 确定按钮
+        ok_btn = QPushButton("确定")
+        ok_btn.setFixedSize(100, 38)
+        ok_btn.setCursor(Qt.PointingHandCursor)
+        ok_btn.clicked.connect(dialog.accept)
+        ok_btn.setStyleSheet("""
+            QPushButton {
+                background: #fa5151;
+                color: #ffffff;
+                border: none;
+                border-radius: 4px;
+                font-size: 14px;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                background: #e84545;
+            }
+        """)
+        btn_layout.addWidget(ok_btn)
+        
+        content_layout.addLayout(btn_layout)
+        
+        container_layout.addWidget(content_widget)
+        
+        main_layout = QVBoxLayout(dialog)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.addWidget(main_container)
+        
+        result = dialog.exec_()
+        return result == QDialog.Accepted
     
     @staticmethod
     def create_custom(parent, title, text, info_text=None):
