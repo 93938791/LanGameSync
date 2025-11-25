@@ -31,17 +31,9 @@ def build_with_nuitka():
         # PyQt5相关配置
         "--enable-plugin=pyqt5",
         
-        # 性能优化 - 加速编译
-        "--lto=no",  # 禁用链接时优化,大幅加速(牺牲5-10%性能)
-        "--jobs=8",  # 增加并行编译核心数
-        
-        # 排除不需要的模块 - 大幅减少编译时间
-        "--nofollow-import-to=scipy",  # 排除scipy(科学计算库,项目未使用)
-        "--nofollow-import-to=matplotlib",  # 排除matplotlib
-        "--nofollow-import-to=pandas",  # 排除pandas
-        "--nofollow-import-to=tkinter",  # 排除tkinter
-        "--nofollow-import-to=test",  # 排除测试模块
-        "--nofollow-import-to=unittest",  # 排除单元测试
+        # 性能优化 - 针对32线程CPU优化
+        "--lto=yes",  # 启用链接时优化,提升运行性能
+        "--jobs=28",  # 使用28个线程并行编译(预留4线程给系统)
         
         # 避免误报的关键配置
         "--assume-yes-for-downloads",  # 自动下载依赖

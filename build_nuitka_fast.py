@@ -30,9 +30,9 @@ def build_with_nuitka_fast():
         # PyQt5相关配置
         "--enable-plugin=pyqt5",
         
-        # 快速编译优化
+        # 快速编译优化 - 针对32线程CPU优化
         "--lto=no",  # 禁用LTO,大幅加速
-        "--jobs=8",  # 8核并行
+        "--jobs=28",  # 28线程并行(预疙4线程给系统)
         
         # 排除不需要的大型库 - 关键加速点
         "--nofollow-import-to=scipy",
