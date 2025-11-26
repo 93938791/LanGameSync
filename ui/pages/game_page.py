@@ -407,7 +407,8 @@ class GameInterface(QWidget):
         
         for game in game_list:
             item = QListWidgetItem()
-            is_syncing = game.get('is_syncing', False)
+            # 检查实际的同步状态（从Syncthing获取）
+            is_syncing = self._check_actual_sync_status(game)
             sync_status = "🔄 启用同步" if is_syncing else "⚪ 停止同步"
             item.setText(f"{game.get('name', '未命名')}\n{sync_status}")
             item.setData(Qt.UserRole, game)
@@ -429,7 +430,8 @@ class GameInterface(QWidget):
         self.game_name_label.setText(game_data.get('name', '未命名'))
         self.game_path_label.setText(game_data.get('save_path', ''))
         
-        is_syncing = game_data.get('is_syncing', False)
+        # 检查实际的同步状态（从Syncthing获取）
+        is_syncing = self._check_actual_sync_status(game_data)
         sync_status = "🔄 启用同步" if is_syncing else "⚪ 停止同步"
         self.sync_status_label.setText(sync_status)
         self.sync_status_label.setStyleSheet(f"color: {'#107c10' if is_syncing else '#999999'}; font-size: 13px; font-weight: 500;")
@@ -1290,6 +1292,34 @@ class GameInterface(QWidget):
             
         except Exception as e:
             logger.error(f"停止同步失败: {e}")
+    
+    def _check_actual_sync_status(self, game_data):
+        """检查游戏的实际同步状态（从Syncthing获取）"""
+        try:
+            # 如果未连接网络或Syncthing未启动，返回False
+            if not hasattr(self.parent_window, 'syncthing_manager') or not self.parent_window.syncthing_manager:
+                return False
+            
+            # 获取文件夹ID
+            folder_id = game_data.get('sync_folder_id')
+            if not folder_id:
+                return False
+            
+            # 从Syncthing配置中获取文件夹状态
+            config = self.parent_window.syncthing_manager.get_config()
+            if not config:
+                return False
+            
+            # 检查文件夹是否存在且未暂停
+            for folder in config.get('folders', []):
+                if folder.get('id') == folder_id:
+                    # 如果文件夹未暂停，则返回True
+                    return not folder.get('paused', True)
+            
+            return False
+        except Exception as e:
+            logger.error(f"检查同步状态失败: {e}")
+            return False
     
     def delete_game(self):
         """删除游戏"""

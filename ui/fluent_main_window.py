@@ -119,6 +119,9 @@ class FluentMainWindow(FluentWindow):
         
         # 设置默认页面
         self.switchTo(self.network_interface)
+        
+        # 启动时自动暂停所有同步文件夹
+        self._pause_all_folders_on_startup()
     
     def on_syncthing_event(self, event_type, event_data):
         """
@@ -170,6 +173,57 @@ Syncthing事件回调(收到同步事件时自动调用)
                     logger.info("已刷新客户端列表")
         except Exception as e:
             logger.error(f"UDP消息处理失败: {e}")
+    
+    def _pause_all_folders_on_startup(self):
+        """程序启动时，将所有游戏的同步状态设置为停止"""
+        try:
+            from utils.config_cache import ConfigCache
+            
+            config_data = ConfigCache.load()
+            game_list = config_data.get("game_list", [])
+            
+            # 将所有游戏的is_syncing设置为False
+            for game in game_list:
+                game['is_syncing'] = False
+            
+            ConfigCache.save(config_data)
+            logger.info(f"已将 {len(game_list)} 个游戏的同步状态重置为停止")
+        except Exception as e:
+            logger.error(f"重置同步状态失败: {e}")
+    
+    def closeEvent(self, event):
+        """窗口关闭事件 - 断开网络和停止Syncthing"""
+        try:
+            logger.info("正在关闭程序...")
+            
+            # 1. 断开UDP广播
+            if hasattr(self, 'udp_broadcast') and self.udp_broadcast:
+                logger.info("正在关闭UDP广播...")
+                self.udp_broadcast.disconnect()
+                self.udp_broadcast = None
+            
+            # 2. 停止Syncthing
+            if hasattr(self, 'syncthing_manager') and self.syncthing_manager:
+                logger.info("正在停止Syncthing...")
+                self.syncthing_manager.stop()
+                self.syncthing_manager = None
+            
+            # 3. 断开EasyTier网络
+            if hasattr(self, 'controller') and self.controller:
+                if hasattr(self.controller, 'easytier') and self.controller.easytier:
+                    logger.info("正在断开EasyTier网络...")
+                    self.controller.easytier.stop()
+            
+            # 4. 重置连接状态
+            self.is_connected = False
+            
+            logger.info("程序关闭清理完成")
+            
+        except Exception as e:
+            logger.error(f"关闭程序时清理失败: {e}")
+        finally:
+            # 接受关闭事件
+            event.accept()
 
 
 if __name__ == '__main__':
