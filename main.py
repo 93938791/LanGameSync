@@ -112,32 +112,47 @@ def main():
         
         create_sub_interface()
         
-        # 创建从下到上的退出动画
+        # 创建PPT翻页式的退出动画
         def animate_splash_exit():
-            """启动页面从下到上退出动画"""
-            # 获取当前位置
-            start_pos = splash.pos()
-            # 目标位置：向下移动窗口高度（从屏幕底部退出）
-            end_pos = QPoint(start_pos.x(), desktop.height())
+            """启动页面PPT翻页式退出动画（不超出窗口边界）"""
+            # 先显示主窗口（但设置为透明）
+            window.setWindowOpacity(0.0)
+            window.show()
             
-            # 创建位置动画
-            animation = QPropertyAnimation(splash, b"pos")
-            animation.setDuration(600)  # 动画时长600毫秒
-            animation.setStartValue(start_pos)
-            animation.setEndValue(end_pos)
-            animation.setEasingCurve(QEasingCurve.InOutCubic)  # 使用平滑的缓动曲线
+            # 创建启动页面的高度收缩动画（从下向上收缩）
+            splash_geometry = splash.geometry()
+            
+            # 启动页面高度动画（收缩到0）
+            splash_animation = QPropertyAnimation(splash, b"geometry")
+            splash_animation.setDuration(500)  # 500毫秒
+            splash_animation.setStartValue(splash_geometry)
+            # 收缩到顶部：保持x和width不变，height缩小到0，y向下移动
+            splash_animation.setEndValue(
+                splash_geometry.adjusted(0, 0, 0, -splash_geometry.height())
+            )
+            splash_animation.setEasingCurve(QEasingCurve.InOutQuad)
+            
+            # 主窗口透明度动画（从0到1）
+            window_animation = QPropertyAnimation(window, b"windowOpacity")
+            window_animation.setDuration(500)  # 500毫秒
+            window_animation.setStartValue(0.0)
+            window_animation.setEndValue(1.0)
+            window_animation.setEasingCurve(QEasingCurve.InOutQuad)
             
             # 动画结束后的处理
             def on_animation_finished():
                 splash.finish()  # 关闭启动页面
-                window.show()    # 显示主窗口
+                window.setWindowOpacity(1.0)  # 确保主窗口完全不透明
             
-            animation.finished.connect(on_animation_finished)
-            animation.start()
+            splash_animation.finished.connect(on_animation_finished)
+            
+            # 同时启动两个动画
+            splash_animation.start()
+            window_animation.start()
             
             # 等待动画完成
             loop = QEventLoop()
-            animation.finished.connect(loop.quit)
+            splash_animation.finished.connect(loop.quit)
             loop.exec()
         
         # 执行退出动画
