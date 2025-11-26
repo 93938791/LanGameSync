@@ -711,8 +711,17 @@ class SyncthingManager:
             # 查找文件夹
             for folder in config.get('folders', []):
                 if folder['id'] == folder_id:
-                    # 检查是否有共享设备
+                    # 清理设备列表中的本机ID（关键修复）
                     folder_devices = folder.get('devices', [])
+                    original_count = len(folder_devices)
+                    # 过滤掉本机ID
+                    folder_devices = [dev for dev in folder_devices if dev.get('deviceID') != self.device_id]
+                    folder['devices'] = folder_devices
+                    
+                    if original_count != len(folder_devices):
+                        logger.info(f"✅ 已从文件夹 {folder_id} 中清理本机ID (删除{original_count - len(folder_devices)}个)")
+                    
+                    # 检查是否有共享设备
                     if not folder_devices:
                         logger.warning(f"⚠️ 文件夹 {folder_id} 未共享给任何设备，无法同步")
                         return False
