@@ -37,6 +37,10 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
         self.traffic_timer = QTimer()
         self.traffic_timer.timeout.connect(self.update_traffic_stats)
         
+        # 设备列表刷新定时器（每5秒刷新一次）
+        self.device_refresh_timer = QTimer()
+        self.device_refresh_timer.timeout.connect(self.update_clients_list)
+        
         # 设置全局唯一的对象名称（必须）
         self.setObjectName("networkInterface")
         
@@ -536,6 +540,10 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
             self.traffic_timer.start(2000)
             logger.info("流量统计定时器已启动")
             
+            # 启动设备列表刷新定时器（每5秒刷新一次）
+            self.device_refresh_timer.start(5000)
+            logger.info("设备列表刷新定时器已启动")
+            
             # 不再启动持续轮询线程，改为连接时发现一次
             # self._start_device_discovery_thread()  # 已禁用
             logger.info("设备发现已完成，不启动持续监测")
@@ -574,6 +582,11 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
             if self.traffic_timer.isActive():
                 self.traffic_timer.stop()
                 logger.info("流量统计定时器已停止")
+            
+            # 停止设备列表刷新定时器
+            if self.device_refresh_timer.isActive():
+                self.device_refresh_timer.stop()
+                logger.info("设备列表刷新定时器已停止")
             
             # TODO: 实现断开逻辑
             self.parent_window.is_connected = False
@@ -614,6 +627,11 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
         try:
             # 获取对等设备列表
             peers = self.parent_window.controller.easytier.discover_peers(timeout=3)
+            
+            # 如果获取失败或为空，保留当前显示（避免闪烁）
+            if not peers:
+                logger.debug("未发现对等设备，保留当前显示")
+                return
             
             # 收集设备信息
             devices = []
