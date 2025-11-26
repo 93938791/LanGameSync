@@ -90,6 +90,12 @@ class GameLauncher:
                     account_type = account_info.get('account_type', 'offline')
                     use_offline = (account_type == 'offline')
                     logger.info(f"从启动器读取到账号: {player_name} (类型: {account_type})")
+                    logger.info(f"  └─ UUID: {mojang_uuid}")
+                    logger.info(f"  └─ Token: {mojang_token[:20] if mojang_token and len(mojang_token) > 20 else mojang_token}...")
+                    logger.info(f"  └─ 离线模式: {use_offline}")
+                else:
+                    logger.warning("⚠️ 从启动器读取账号失败，将使用离线模式")
+                    logger.warning(f"  └─ 玩家名称: {player_name}")
             
             if player_name is None:
                 player_name = 'Player'
@@ -655,7 +661,17 @@ class GameLauncher:
             access_token = 'null'
             user_type = 'legacy'
         else:
-            uuid = mojang_uuid or '00000000-0000-0000-0000-000000000000'
+            # 确保UUID格式正确（带横线）
+            if mojang_uuid:
+                # 如果UUID没有横线，添加横线
+                if '-' not in mojang_uuid and len(mojang_uuid) == 32:
+                    uuid = f"{mojang_uuid[:8]}-{mojang_uuid[8:12]}-{mojang_uuid[12:16]}-{mojang_uuid[16:20]}-{mojang_uuid[20:]}"
+                    logger.info(f"UUID格式化: {mojang_uuid} -> {uuid}")
+                else:
+                    uuid = mojang_uuid
+            else:
+                uuid = '00000000-0000-0000-0000-000000000000'
+            
             access_token = mojang_token or 'null'
             # 根据账号类型设置user_type
             if account_type == 'microsoft':

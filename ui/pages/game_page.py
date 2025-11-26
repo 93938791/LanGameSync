@@ -1721,12 +1721,14 @@ class GameInterface(QWidget):
             version = self.selected_game.get('version')
             save_path = self.selected_game.get('save_path', '')
             launcher_path = self.selected_game.get('launcher_path')
-            player_account = self.selected_game.get('selected_account', {})
-            player_name = player_account.get('name', '') if isinstance(player_account, dict) else str(player_account)
+            # 获取玩家名称（selected_account直接保存的是字符串）
+            player_name = self.selected_game.get('selected_account', '')
             
+            # 记录调试信息
             logger.info(f"准备加入游戏: {game_name}")
             logger.info(f"版本: {version}")
             logger.info(f"玩家: {player_name}")
+            logger.info(f"启动器: {launcher_path}")
             logger.info(f"服务器: {self.game_host}:{self.game_port}")
             
             # 从存档路径推断 Minecraft 目录
