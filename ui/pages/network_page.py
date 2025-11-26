@@ -364,7 +364,6 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
         
         # 如果设备名过长，启用滚动动画
         if len(device_name) > 8:  # 超过8个字符启用滚动
-            name_container.setStyleSheet("overflow: hidden;")
             # 创建滚动动画
             self._setup_scroll_animation(name_label, device_name)
         

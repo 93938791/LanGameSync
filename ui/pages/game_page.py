@@ -29,6 +29,9 @@ class GameInterface(QWidget):
         self.game_port = None  # 当前游戏端口
         self.game_world = None  # 当前游戏世界
         self.is_host = False  # 是否是主机
+        self.game_process = None  # 游戏进程对象
+        self.process_monitor_thread = None  # 进程监控线程
+        self.broadcast_timer = None  # 主机广播定时器
         
         # 设置全局唯一的对象名称（必须）
         self.setObjectName("gameInterface")
@@ -828,6 +831,9 @@ class GameInterface(QWidget):
             else:
                 logger.warning("udp_broadcast 不存在！")
             
+            # 设置为主机状态（防止自己的按钮被禁用）
+            self.is_host = True
+            
             # 禁用启动按钮
             self.launch_game_btn.setEnabled(False)
             self.launch_game_btn.setText("正在启动...")
@@ -873,6 +879,10 @@ class GameInterface(QWidget):
                                 self.is_host = True
                                 self.game_port = lan_port
                                 self.game_world = world_name
+                                self.game_process = game_launcher.game_process  # 保存游戏进程
+                                
+                                # 启动进程监控
+                                self._start_process_monitor(game_name, world_name, player_name)
                                 
                                 # 广播游戏启动成功（其他人按钮变为"加入游戏"）
                                 logger.info("检查UDP广播对象...")
@@ -881,6 +891,9 @@ class GameInterface(QWidget):
                                     virtual_ip = ""
                                     if hasattr(self.parent_window, 'controller') and hasattr(self.parent_window.controller, 'easytier'):
                                         virtual_ip = self.parent_window.controller.easytier.virtual_ip or ''
+                                    
+                                    if not virtual_ip:
+                                        logger.warning("未获取到EasyTier虚拟IP，其他玩家可能无法加入")
                                     
                                     logger.info(f"udp_broadcast 存在，开始广播 game/started (host_ip={virtual_ip}, port={lan_port})")
                                     self.parent_window.udp_broadcast.publish(
@@ -895,6 +908,9 @@ class GameInterface(QWidget):
                                     )
                                 else:
                                     logger.warning("udp_broadcast 不存在！")
+                                
+                                # 启动定时广播（每10秒广播一次，让新加入的玩家知道服务器在运行）
+                                self._start_host_broadcast(game_name, world_name, player_name, lan_port)
                                 
                                 # 恢复按钮状态（先恢复再显示消息）
                                 from PyQt5.QtCore import QTimer
@@ -958,6 +974,13 @@ class GameInterface(QWidget):
                     logger.error(f"启动游戏异常: {e}")
                     import traceback
                     logger.error(traceback.format_exc())
+                    
+                    # 重置is_host状态
+                    self.is_host = False
+                    
+                    # 停止广播定时器
+                    from PyQt5.QtCore import QTimer
+                    QTimer.singleShot(0, lambda: self._stop_host_broadcast())
                     
                     # 广播游戏启动失败（恢复所有人的启动按钮）
                     if hasattr(self.parent_window, 'udp_broadcast') and self.parent_window.udp_broadcast:
@@ -1653,45 +1676,195 @@ class GameInterface(QWidget):
             from PyQt5.QtCore import QTimer
             
             if message_type == "game/starting":
-                # 收到游戏启动中消息，禁用启动按钮
-                logger.info(f"收到游戏启动中消息: {data.get('player_name')} 正在启动 {data.get('world_name')}")
-                QTimer.singleShot(0, lambda: self.launch_game_btn.setEnabled(False))
-                QTimer.singleShot(0, lambda: self.launch_game_btn.setText("他人启动中..."))
-                QTimer.singleShot(0, lambda: self.launch_game_btn.setStyleSheet("""
-                    PrimaryPushButton {
-                        background: #999999;
-                    }
-                """))
+                # 收到游戏启动中消息，禁用启动按钮（只有在非主机状态下才禁用）
+                if not self.is_host:
+                    logger.info(f"收到游戏启动中消息: {data.get('player_name')} 正在启动 {data.get('world_name')}")
+                    QTimer.singleShot(0, lambda: self.launch_game_btn.setEnabled(False))
+                    QTimer.singleShot(0, lambda: self.launch_game_btn.setText("他人启动中..."))
+                    QTimer.singleShot(0, lambda: self.launch_game_btn.setStyleSheet("""
+                        PrimaryPushButton {
+                            background: #999999;
+                        }
+                    """))
                 
             elif message_type == "game/started":
-                # 收到游戏启动成功消息，按钮变为"加入游戏"
-                logger.info(f"收到游戏启动成功消息: {data.get('player_name')} 已开启服务器")
-                self.game_host = data.get('host_ip', '')
-                self.game_port = data.get('port', 0)
-                self.game_world = data.get('world_name', '')
+                # 收到游戏启动成功消息，按钮变为"加入游戏"（只有在非主机状态下才切换）
+                if not self.is_host:
+                    logger.info(f"收到游戏启动成功消息: {data.get('player_name')} 已开启服务器")
+                    self.game_host = data.get('host_ip', '')
+                    self.game_port = data.get('port', 0)
+                    self.game_world = data.get('world_name', '')
+                    
+                    player_name = data.get('player_name', '未知玩家')
+                    # 使用捕获的变量避免lambda闭包问题
+                    pname = player_name
+                    QTimer.singleShot(0, lambda: self.launch_game_btn.setEnabled(True))
+                    QTimer.singleShot(0, lambda: self.launch_game_btn.setText(f"加入游戏 ({pname})"))
+                    QTimer.singleShot(0, lambda: self.launch_game_btn.setStyleSheet("""
+                        PrimaryPushButton {
+                            background: #107c10;
+                        }
+                        PrimaryPushButton:hover {
+                            background: #0d6b0d;
+                        }
+                    """))
+                    
+                    # 显示提示信息
+                    InfoBar.success(
+                        title='游戏可加入',
+                        content=f"{pname} 已开启服务器，点击加入游戏即可连接",
+                        orient=Qt.Horizontal,
+                        isClosable=True,
+                        position=InfoBarPosition.TOP,
+                        duration=3000,
+                        parent=self
+                    )
                 
-                player_name = data.get('player_name', '未知玩家')
-                QTimer.singleShot(0, lambda: self.launch_game_btn.setEnabled(True))
-                QTimer.singleShot(0, lambda: self.launch_game_btn.setText(f"加入游戏 ({player_name})"))
-                QTimer.singleShot(0, lambda: self.launch_game_btn.setStyleSheet("""
-                    PrimaryPushButton {
-                        background: #107c10;
-                    }
-                    PrimaryPushButton:hover {
-                        background: #0d6b0d;
-                    }
-                """))
+            elif message_type == "game/failed" or message_type == "game/host_offline":
+                # 收到游戏启动失败或主机掉线消息，恢复启动按钮
+                if message_type == "game/failed":
+                    logger.info(f"收到游戏启动失败消息: {data.get('player_name')} 启动失败")
+                else:
+                    logger.info(f"收到主机掉线消息: {data.get('player_name')} 已下线")
                 
-            elif message_type == "game/failed":
-                # 收到游戏启动失败消息，恢复启动按钮
-                logger.info(f"收到游戏启动失败消息: {data.get('player_name')} 启动失败")
+                # 清空主机信息
                 self.game_host = None
                 self.game_port = None
                 self.game_world = None
                 
+                # 恢复按钮状态
                 QTimer.singleShot(0, lambda: self.launch_game_btn.setEnabled(True))
                 QTimer.singleShot(0, lambda: self.launch_game_btn.setText("启动游戏"))
                 QTimer.singleShot(0, lambda: self.launch_game_btn.setStyleSheet(""))  # 恢复默认样式
                 
+                # 如果是主机掉线，显示提示
+                if message_type == "game/host_offline":
+                    InfoBar.warning(
+                        title='主机已下线',
+                        content=f"{data.get('player_name', '主机')} 已离开，现在可以重新启动游戏",
+                        orient=Qt.Horizontal,
+                        isClosable=True,
+                        position=InfoBarPosition.TOP,
+                        duration=3000,
+                        parent=self
+                    )
+                
         except Exception as e:
             logger.error(f"处理游戏消息失败: {e}")
+    
+    def _start_process_monitor(self, game_name, world_name, player_name):
+        """
+        启动游戏进程监控，当进程结束时广播主机掉线消息
+        
+        Args:
+            game_name: 游戏名称
+            world_name: 世界名称
+            player_name: 玩家名称
+        """
+        import threading
+        
+        def monitor_thread():
+            try:
+                if not self.game_process:
+                    logger.warning("游戏进程不存在，无法监控")
+                    return
+                
+                logger.info(f"开始监控游戏进程 PID={self.game_process.pid}")
+                
+                # 等待进程结束
+                self.game_process.wait()
+                
+                logger.info(f"游戏进程已结束，退出码: {self.game_process.returncode}")
+                
+                # 停止广播定时器
+                from PyQt5.QtCore import QTimer
+                QTimer.singleShot(0, lambda: self._stop_host_broadcast())
+                
+                # 广播主机掉线消息
+                if hasattr(self.parent_window, 'udp_broadcast') and self.parent_window.udp_broadcast:
+                    self.parent_window.udp_broadcast.publish(
+                        "game/host_offline",
+                        {
+                            "game_name": game_name,
+                            "world_name": world_name,
+                            "player_name": player_name
+                        }
+                    )
+                    logger.info("已广播主机掉线消息")
+                
+                # 重置主机状态
+                self.is_host = False
+                self.game_process = None
+                self.game_port = None
+                self.game_world = None
+                
+                # 恢复按钮状态
+                from PyQt5.QtCore import QTimer
+                QTimer.singleShot(0, lambda: self.launch_game_btn.setEnabled(True))
+                QTimer.singleShot(0, lambda: self.launch_game_btn.setText("启动游戏"))
+                QTimer.singleShot(0, lambda: self.launch_game_btn.setStyleSheet(""))
+                
+            except Exception as e:
+                logger.error(f"监控游戏进程失败: {e}")
+        
+        # 启动监控线程
+        self.process_monitor_thread = threading.Thread(target=monitor_thread, daemon=True)
+        self.process_monitor_thread.start()
+        logger.info("已启动游戏进程监控线程")
+    
+    def _start_host_broadcast(self, game_name, world_name, player_name, port):
+        """
+        启动主机广播定时器，每10秒广播一次服务器信息
+        
+        Args:
+            game_name: 游戏名称
+            world_name: 世界名称
+            player_name: 玩家名称
+            port: 游戏端口
+        """
+        from PyQt5.QtCore import QTimer
+        
+        # 先停止旧的定时器
+        self._stop_host_broadcast()
+        
+        def broadcast_server_info():
+            """broadcast服务器信息"""
+            try:
+                if not self.is_host:
+                    # 已经不是主机了，停止广播
+                    self._stop_host_broadcast()
+                    return
+                
+                if hasattr(self.parent_window, 'udp_broadcast') and self.parent_window.udp_broadcast:
+                    # 获取本机EasyTier虚拟IP
+                    virtual_ip = ""
+                    if hasattr(self.parent_window, 'controller') and hasattr(self.parent_window.controller, 'easytier'):
+                        virtual_ip = self.parent_window.controller.easytier.virtual_ip or ''
+                    
+                    self.parent_window.udp_broadcast.publish(
+                        "game/started",
+                        {
+                            "game_name": game_name,
+                            "world_name": world_name,
+                            "player_name": player_name,
+                            "port": port,
+                            "host_ip": virtual_ip
+                        }
+                    )
+                    logger.debug(f"广播服务器信息: {virtual_ip}:{port}")
+            except Exception as e:
+                logger.error(f"广播服务器信息失败: {e}")
+        
+        # 创建定时器，每10秒广播一次
+        self.broadcast_timer = QTimer()
+        self.broadcast_timer.timeout.connect(broadcast_server_info)
+        self.broadcast_timer.start(10000)  # 10秒
+        logger.info("已启动主机广播定时器，每10秒广播一次")
+    
+    def _stop_host_broadcast(self):
+        """停止主机广播定时器"""
+        if self.broadcast_timer:
+            self.broadcast_timer.stop()
+            self.broadcast_timer.deleteLater()
+            self.broadcast_timer = None
+            logger.info("已停止主机广播定时器")
