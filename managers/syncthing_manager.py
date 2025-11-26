@@ -83,6 +83,9 @@ class SyncthingManager:
         self.device_id = self.get_device_id()
         logger.info(f"Syncthing启动成功，设备ID: {self.device_id}")
         
+        # 清理配置中错误添加的本机设备ID
+        self._remove_self_from_devices()
+        
         # 禁用本地发现和全局发现，强制只使用EasyTier虚拟IP
         self._disable_discovery()
         
@@ -213,6 +216,36 @@ class SyncthingManager:
                 return True
         except Exception as e:
             logger.error(f"启用自动接受失败: {e}")
+            return False
+    
+    def _remove_self_from_devices(self):
+        """清理配置中错误添加的本机设备ID"""
+        try:
+            config = self.get_config()
+            if not config:
+                logger.warning("无法获取配置，跳过清理本机设备")
+                return False
+            
+            devices = config.get('devices', [])
+            original_count = len(devices)
+            
+            # 过滤掉本机的设备ID
+            config['devices'] = [dev for dev in devices if dev.get('deviceID') != self.device_id]
+            
+            removed_count = original_count - len(config['devices'])
+            if removed_count > 0:
+                result = self.set_config(config, async_mode=False)
+                if result:
+                    logger.info(f"✅ 已清理配置中的本机设备ID (删除{removed_count}个)")
+                    return True
+                else:
+                    logger.warning("清理本机设备失败")
+                    return False
+            else:
+                logger.debug("配置中没有本机设备ID，无需清理")
+                return True
+        except Exception as e:
+            logger.error(f"清理本机设备失败: {e}")
             return False
     
     def _configure_listen_address(self):
