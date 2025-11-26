@@ -1695,6 +1695,7 @@ class GameInterface(QWidget):
                     logger.info("调用 launch_minecraft...")
                     success = game_launcher.launch_minecraft(
                         launcher_path=launcher_path,
+                        player_name=player_name,
                         server_ip=self.game_host,
                         server_port=self.game_port
                     )
@@ -1704,10 +1705,14 @@ class GameInterface(QWidget):
                     if success:
                         logger.info("加入游戏成功")
                         
-                        # 恢复按钮状态
+                        # 保存游戏进程（用于关闭游戏）
+                        self.game_process = game_launcher.game_process
+                        
+                        # 更新按钮状态：隐藏加入按钮，显示关闭按钮
                         from PyQt5.QtCore import QTimer
-                        QTimer.singleShot(0, lambda: self.join_game_btn.setEnabled(True))
-                        QTimer.singleShot(0, lambda: self.join_game_btn.setText("加入游戏"))
+                        QTimer.singleShot(0, lambda: self.join_game_btn.setVisible(False))
+                        QTimer.singleShot(0, lambda: self.close_game_btn.setVisible(True))
+                        QTimer.singleShot(0, lambda: self.close_game_btn.setEnabled(True))
                         
                         QMetaObject.invokeMethod(
                             self,
@@ -1722,6 +1727,7 @@ class GameInterface(QWidget):
                         from PyQt5.QtCore import QTimer
                         QTimer.singleShot(0, lambda: self.join_game_btn.setEnabled(True))
                         QTimer.singleShot(0, lambda: self.join_game_btn.setText("加入游戏"))
+                        QTimer.singleShot(0, lambda: self.join_game_btn.setVisible(True))
                         
                         QMetaObject.invokeMethod(
                             self,
@@ -1742,9 +1748,7 @@ class GameInterface(QWidget):
                         Q_ARG(str, f"加入失败: {str(e)}")
                     )
                 finally:
-                    # 恢复按钮状态
-                    from PyQt5.QtCore import QTimer
-                    QTimer.singleShot(0, lambda: self.join_game_btn.setEnabled(True))
+                    pass  # 按钮状态已在 success/error 分支中处理
             
             threading.Thread(target=join_thread, daemon=True).start()
             
