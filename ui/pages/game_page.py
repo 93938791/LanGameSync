@@ -358,11 +358,18 @@ class GameInterface(QWidget):
         self.select_user_btn.clicked.connect(self.select_account)
         layout.addWidget(self.select_user_btn)
         
-        # 启动游戏
+        # 启动游戏按钮（默认显示）
         self.launch_game_btn = PrimaryPushButton(FluentIcon.PLAY, "启动游戏")
         self.launch_game_btn.setFixedHeight(40)
-        self.launch_game_btn.clicked.connect(self.launch_or_join_game)
+        self.launch_game_btn.clicked.connect(self.launch_game)
         layout.addWidget(self.launch_game_btn)
+        
+        # 加入游戏按钮（默认隐藏）
+        self.join_game_btn = PrimaryPushButton(FluentIcon.LINK, "加入游戏")
+        self.join_game_btn.setFixedHeight(40)
+        self.join_game_btn.clicked.connect(self.join_game)
+        self.join_game_btn.setVisible(False)  # 默认隐藏
+        layout.addWidget(self.join_game_btn)
         
         # 启动同步
         self.sync_btn = PushButton(FluentIcon.SYNC, "启动同步")
@@ -831,10 +838,10 @@ class GameInterface(QWidget):
             else:
                 logger.warning("tcp_broadcast 不存在！")
             
-            # 设置为主机状态（防止自己的按钮被禁用）
+           # 设置为主机状态（防止自己的按钮被禁用）
             self.is_host = True
             
-            # 禁用启动按钮
+            # 禁用启动按钮，显示"正在启动..."
             self.launch_game_btn.setEnabled(False)
             self.launch_game_btn.setText("正在启动...")
             
@@ -1085,14 +1092,11 @@ class GameInterface(QWidget):
                 # 收到游戏启动中消息，禁用启动按钮（只有在非主机状态下才禁用）
                 if not self.is_host:
                     logger.info(f"收到游戏启动中消息: {data.get('player_name')} 正在启动 {data.get('world_name')}")
-                    self.launch_game_btn.setEnabled(False)
-                    self.launch_game_btn.setText("他人启动中...")
-                    self.launch_game_btn.setStyleSheet("""
-                        QPushButton {
-                            background: #cccccc;
-                            color: #666666;
-                        }
-                    """)
+                    # 隐藏启动按钮，显示禁用的加入按钮
+                    self.launch_game_btn.setVisible(False)
+                    self.join_game_btn.setVisible(True)
+                    self.join_game_btn.setEnabled(False)
+                    self.join_game_btn.setText("他人启动中...")
             
             elif message_type == "game/started":
                 # 收到游戏启动成功消息，按钮变为"加入游戏"（只有在非主机状态下才切换）
@@ -1102,22 +1106,11 @@ class GameInterface(QWidget):
                     self.game_port = data.get('port', 0)
                     self.game_world = data.get('world_name', '')
                     
-                    self.launch_game_btn.setEnabled(True)
-                    self.launch_game_btn.setText("加入游戏")
-                    self.launch_game_btn.setStyleSheet("""
-                        QPushButton {
-                            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                                stop:0 #10b981,
-                                stop:1 #059669);
-                            color: white;
-                            font-weight: bold;
-                        }
-                        QPushButton:hover {
-                            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                                stop:0 #059669,
-                                stop:1 #047857);
-                        }
-                    """)
+                    # 隐藏启动按钮，显示加入按钮
+                    self.launch_game_btn.setVisible(False)
+                    self.join_game_btn.setVisible(True)
+                    self.join_game_btn.setEnabled(True)
+                    self.join_game_btn.setText("加入游戏")
                     
                     logger.info(f"主机: {self.game_host}:{self.game_port}, 世界: {self.game_world}")
             
@@ -1128,9 +1121,10 @@ class GameInterface(QWidget):
                 self.game_port = None
                 self.game_world = None
                 
+                # 显示启动按钮，隐藏加入按钮
+                self.launch_game_btn.setVisible(True)
                 self.launch_game_btn.setEnabled(True)
-                self.launch_game_btn.setText("启动游戏")
-                self.launch_game_btn.setStyleSheet("")
+                self.join_game_btn.setVisible(False)
         
         except Exception as e:
             logger.error(f"处理游戏消息失败: {e}")
@@ -1576,17 +1570,6 @@ class GameInterface(QWidget):
                 parent=self
             )
     
-    def launch_or_join_game(self):
-        """启动或加入游戏（根据按钮文本判断）"""
-        btn_text = self.launch_game_btn.text()
-        
-        if "加入" in btn_text:
-            # 加入游戏
-            self.join_game()
-        else:
-            # 启动游戏
-            self.launch_game()
-    
     def join_game(self):
         """加入游戏（自动连接到主机）"""
         if not self.game_host or not self.game_port:
@@ -1657,9 +1640,9 @@ class GameInterface(QWidget):
             logger.info(f"玩家: {player_name}")
             logger.info(f"连接到服务器: {self.game_host}:{self.game_port}")
             
-            # 禁用按钮
-            self.launch_game_btn.setEnabled(False)
-            self.launch_game_btn.setText("正在加入...")
+            # 禁用加入按钮
+            self.join_game_btn.setEnabled(False)
+            self.join_game_btn.setText("正在加入...")
             
             # 在子线程中启动游戏
             def join_thread():
@@ -1679,8 +1662,8 @@ class GameInterface(QWidget):
                         
                         # 恢复按钮状态
                         from PyQt5.QtCore import QTimer
-                        QTimer.singleShot(0, lambda: self.launch_game_btn.setEnabled(True))
-                        QTimer.singleShot(0, lambda: self.launch_game_btn.setText("加入游戏"))
+                        QTimer.singleShot(0, lambda: self.join_game_btn.setEnabled(True))
+                        QTimer.singleShot(0, lambda: self.join_game_btn.setText("加入游戏"))
                         
                         QMetaObject.invokeMethod(
                             self,
@@ -1693,8 +1676,8 @@ class GameInterface(QWidget):
                         
                         # 恢复按钮状态
                         from PyQt5.QtCore import QTimer
-                        QTimer.singleShot(0, lambda: self.launch_game_btn.setEnabled(True))
-                        QTimer.singleShot(0, lambda: self.launch_game_btn.setText("加入游戏"))
+                        QTimer.singleShot(0, lambda: self.join_game_btn.setEnabled(True))
+                        QTimer.singleShot(0, lambda: self.join_game_btn.setText("加入游戏"))
                         
                         QMetaObject.invokeMethod(
                             self,
@@ -1717,7 +1700,7 @@ class GameInterface(QWidget):
                 finally:
                     # 恢复按钮状态
                     from PyQt5.QtCore import QTimer
-                    QTimer.singleShot(0, lambda: self.launch_game_btn.setEnabled(True))
+                    QTimer.singleShot(0, lambda: self.join_game_btn.setEnabled(True))
             
             threading.Thread(target=join_thread, daemon=True).start()
             
@@ -1732,95 +1715,7 @@ class GameInterface(QWidget):
                 duration=2000,
                 parent=self
             )
-            self.launch_game_btn.setEnabled(True)
-    
-    def handle_game_message(self, message_type, data):
-        """
-        处理游戏相关的UDP消息
-        
-        Args:
-            message_type: 消息类型
-            data: 消息数据
-        """
-        try:
-            from PyQt5.QtCore import QTimer
-            
-            if message_type == "game/starting":
-                # 收到游戏启动中消息，禁用启动按钮（只有在非主机状态下才禁用）
-                if not self.is_host:
-                    logger.info(f"收到游戏启动中消息: {data.get('player_name')} 正在启动 {data.get('world_name')}")
-                    QTimer.singleShot(0, lambda: self.launch_game_btn.setEnabled(False))
-                    QTimer.singleShot(0, lambda: self.launch_game_btn.setText("他人启动中..."))
-                    QTimer.singleShot(0, lambda: self.launch_game_btn.setStyleSheet("""
-                        PrimaryPushButton {
-                            background: #999999;
-                        }
-                    """))
-                
-            elif message_type == "game/started":
-                # 收到游戏启动成功消息，按钮变为"加入游戏"（只有在非主机状态下才切换）
-                if not self.is_host:
-                    logger.info(f"收到游戏启动成功消息: {data.get('player_name')} 已开启服务器")
-                    self.game_host = data.get('host_ip', '')
-                    self.game_port = data.get('port', 0)
-                    self.game_world = data.get('world_name', '')
-                    
-                    player_name = data.get('player_name', '未知玩家')
-                    # 使用捕获的变量避免lambda闭包问题
-                    pname = player_name
-                    QTimer.singleShot(0, lambda: self.launch_game_btn.setEnabled(True))
-                    QTimer.singleShot(0, lambda: self.launch_game_btn.setText(f"加入游戏 ({pname})"))
-                    QTimer.singleShot(0, lambda: self.launch_game_btn.setStyleSheet("""
-                        PrimaryPushButton {
-                            background: #107c10;
-                        }
-                        PrimaryPushButton:hover {
-                            background: #0d6b0d;
-                        }
-                    """))
-                    
-                    # 显示提示信息
-                    InfoBar.success(
-                        title='游戏可加入',
-                        content=f"{pname} 已开启服务器，点击加入游戏即可连接",
-                        orient=Qt.Horizontal,
-                        isClosable=True,
-                        position=InfoBarPosition.TOP,
-                        duration=3000,
-                        parent=self
-                    )
-                
-            elif message_type == "game/failed" or message_type == "game/host_offline":
-                # 收到游戏启动失败或主机掉线消息，恢复启动按钮
-                if message_type == "game/failed":
-                    logger.info(f"收到游戏启动失败消息: {data.get('player_name')} 启动失败")
-                else:
-                    logger.info(f"收到主机掉线消息: {data.get('player_name')} 已下线")
-                
-                # 清空主机信息
-                self.game_host = None
-                self.game_port = None
-                self.game_world = None
-                
-                # 恢复按钮状态
-                QTimer.singleShot(0, lambda: self.launch_game_btn.setEnabled(True))
-                QTimer.singleShot(0, lambda: self.launch_game_btn.setText("启动游戏"))
-                QTimer.singleShot(0, lambda: self.launch_game_btn.setStyleSheet(""))  # 恢复默认样式
-                
-                # 如果是主机掉线，显示提示
-                if message_type == "game/host_offline":
-                    InfoBar.warning(
-                        title='主机已下线',
-                        content=f"{data.get('player_name', '主机')} 已离开，现在可以重新启动游戏",
-                        orient=Qt.Horizontal,
-                        isClosable=True,
-                        position=InfoBarPosition.TOP,
-                        duration=3000,
-                        parent=self
-                    )
-                
-        except Exception as e:
-            logger.error(f"处理游戏消息失败: {e}")
+            self.join_game_btn.setEnabled(True)
     
     def _start_process_monitor(self, game_name, world_name, player_name):
         """
@@ -1868,11 +1763,11 @@ class GameInterface(QWidget):
                 self.game_port = None
                 self.game_world = None
                 
-                # 恢复按钮状态
+                # 恢复按钮状态（显示启动按钮，隐藏加入按钮）
                 from PyQt5.QtCore import QTimer
+                QTimer.singleShot(0, lambda: self.launch_game_btn.setVisible(True))
                 QTimer.singleShot(0, lambda: self.launch_game_btn.setEnabled(True))
-                QTimer.singleShot(0, lambda: self.launch_game_btn.setText("启动游戏"))
-                QTimer.singleShot(0, lambda: self.launch_game_btn.setStyleSheet(""))
+                QTimer.singleShot(0, lambda: self.join_game_btn.setVisible(False))
                 
             except Exception as e:
                 logger.error(f"监控游戏进程失败: {e}")
