@@ -646,6 +646,14 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
         
         logger.info("开始更新客户端列表...")
         
+        # 先检查devices_layout是否存在
+        if not hasattr(self, 'devices_layout') or not self.devices_layout:
+            logger.error("❗ devices_layout 未初始化！")
+            return
+        
+        logger.debug(f"devices_layout 存在: {self.devices_layout}")
+        logger.debug(f"device_widgets 列表: {len(self.device_widgets)} 个设备")
+        
         # 在后台线程中执行，不阻塞UI
         import threading
         def update_thread():
@@ -660,12 +668,13 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
                 
                 # 添加本机（总是显示）
                 my_ip = self.parent_window.controller.easytier.virtual_ip or "unknown"
-                logger.info(f"本机虚拟IP: {my_ip}")
+                logger.info(f"本机IP: {my_ip}")
                 devices.append({
                     "name": "本机",
                     "ip": my_ip,
                     "is_self": True
                 })
+                logger.debug(f"已添加本机设备，当前devices数量: {len(devices)}")
                 
                 # 如果有对等设备，处理它们
                 if peers:
@@ -769,6 +778,8 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
                 
             except Exception as e:
                 logger.error(f"后台更新客户端列表失败: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
         
         threading.Thread(target=update_thread, daemon=True, name="UpdateClientsThread").start()
     
