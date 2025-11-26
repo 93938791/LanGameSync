@@ -60,7 +60,14 @@ class FluentMainWindow(FluentWindow):
     def init_window(self):
         """初始化窗口"""
         self.setWindowTitle(f"{Config.APP_NAME}")
-        self.resize(1200, 800)
+        
+        # 设置固定尺寸（横向长方形窗口，宽度足够放下三个卡片）
+        fixed_width = 1120
+        fixed_height = 700
+        self.setFixedSize(fixed_width, fixed_height)
+        
+        # 禁用最大化按钮
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowMaximizeButtonHint)
         
         # 不设置窗口图标（去掉logo）
         # icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'resources', 'logo.ico')

@@ -87,19 +87,23 @@ def main():
         splash = SplashScreen(logo_icon, window)
         splash.setIconSize(QSize(400, 400))
         
-        # 显示主窗口
-        window.show()
+        # 设置启动页面窗口标志
+        splash.setWindowFlags(Qt.SplashScreen | Qt.FramelessWindowHint)
         
-        # 显示启动页面并模拟加载过程
+        # 显示启动页面（在主窗口显示之前）
+        splash.show()
+        
+        # 模拟加载过程
         def create_sub_interface():
             loop = QEventLoop(window)
-            QTimer.singleShot(2500, loop.quit)  # 显示2.5秒
+            QTimer.singleShot(2500, loop.quit)  # 显示5秒
             loop.exec()
         
         create_sub_interface()
         
-        # 隐藏启动页面
+        # 隐藏启动页面并显示主窗口
         splash.finish()
+        window.show()
         
         sys.exit(app.exec_())
         
