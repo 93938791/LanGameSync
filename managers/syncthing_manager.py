@@ -345,11 +345,22 @@ class SyncthingManager:
             return None
     
     def get_config(self):
-        """获取完整配置"""
+        """获取完整配置（自动过滤本机ID）"""
         try:
             resp = requests.get(f"{self.api_url}/rest/config", headers=self.headers, timeout=5)
             resp.raise_for_status()
-            return resp.json()
+            config = resp.json()
+            
+            # 关键修复：每次读取配置时自动过滤本机ID
+            # 防止 Syncthing 自动添加本机到设备列表
+            if config and 'devices' in config and self.device_id:
+                original_count = len(config['devices'])
+                config['devices'] = [dev for dev in config['devices'] if dev.get('deviceID') != self.device_id]
+                removed = original_count - len(config['devices'])
+                if removed > 0:
+                    logger.debug(f"⚠️ get_config中过滤了 {removed} 个本机ID")
+            
+            return config
         except Exception as e:
             logger.error(f"获取配置失败: {e}")
             return None
