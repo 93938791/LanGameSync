@@ -671,15 +671,27 @@ class GameLauncher:
                     uuid = mojang_uuid
             else:
                 uuid = '00000000-0000-0000-0000-000000000000'
+                logger.warning("⚠️ 正版模式但UUID为空，使用默认UUID")
             
-            access_token = mojang_token or 'null'
+            # 检查access_token是否有效
+            if mojang_token and mojang_token != 'null' and len(mojang_token) > 10:
+                access_token = mojang_token
+                logger.info(f"🔑 使用正版Token: {access_token[:20]}...({len(access_token)}字符)")
+            else:
+                access_token = 'null'
+                logger.warning(f"⚠️ 正版模式但Token无效: mojang_token={mojang_token}")
+                logger.warning("⚠️ 这可能导致'Invalid Session'错误！")
+            
             # 根据账号类型设置user_type
             if account_type == 'microsoft':
                 user_type = 'msa'  # Microsoft账号
+                logger.info(f"📦 账号类型: Microsoft (user_type=msa)")
             elif account_type == 'mojang':
                 user_type = 'mojang'  # Mojang账号
+                logger.info(f"📦 账号类型: Mojang (user_type=mojang)")
             else:
                 user_type = 'mojang'  # 默认
+                logger.info(f"📦 账号类型: {account_type} (user_type=mojang)")
         
         replacements = {
             '${auth_player_name}': player_name,
