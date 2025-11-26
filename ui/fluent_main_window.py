@@ -146,7 +146,7 @@ Syncthing事件回调(收到同步事件时自动调用)
     
     def on_tcp_message(self, message_type, data, source_ip="", is_send=False):
         """
-        TCP消息回调
+        TCP消息回调（在子线程中调用）
         
         Args:
             message_type: 消息类型
@@ -155,17 +155,39 @@ Syncthing事件回调(收到同步事件时自动调用)
             is_send: 是否是发送的消息
         """
         try:
-            logger.info(f"收到UDP消息: {message_type}")
+            from PyQt5.QtCore import QMetaObject, Qt, Q_ARG
+            import json
             
+            logger.info(f"收到TCP消息: {message_type}")
+            
+            # 使用QMetaObject.invokeMethod在主线程中执行UI更新
             # 更新联机消息页面
             if hasattr(self, 'message_interface'):
                 msg_type = "发送" if is_send else "接收"
-                self.message_interface.add_message(msg_type, message_type, source_ip, data)
+                # 将data转为JSON字符串，避免传递dict对象
+                data_json = json.dumps(data, ensure_ascii=False)
+                QMetaObject.invokeMethod(
+                    self.message_interface,
+                    "_add_message_safe",
+                    Qt.QueuedConnection,
+                    Q_ARG(str, msg_type),
+                    Q_ARG(str, message_type),
+                    Q_ARG(str, source_ip),
+                    Q_ARG(str, data_json)
+                )
             
             # 处理游戏相关消息
             if message_type.startswith("game/") and not is_send:
                 if hasattr(self, 'game_interface'):
-                    self.game_interface.handle_game_message(message_type, data)
+                    # 将data转为JSON字符串
+                    data_json = json.dumps(data, ensure_ascii=False)
+                    QMetaObject.invokeMethod(
+                        self.game_interface,
+                        "_handle_game_message_safe",
+                        Qt.QueuedConnection,
+                        Q_ARG(str, message_type),
+                        Q_ARG(str, data_json)
+                    )
             
             if message_type == "device/online":
                 # 收到设备上线消息，刷新客户端列表
@@ -176,10 +198,14 @@ Syncthing事件回调(收到同步事件时自动调用)
                 
                 # 刷新客户端列表
                 if self.is_connected:
-                    self.network_interface.update_clients_list()
-                    logger.info("已刷新客户端列表")
+                    QMetaObject.invokeMethod(
+                        self.network_interface,
+                        "update_clients_list",
+                        Qt.QueuedConnection
+                    )
+                    logger.info("已调度刷新客户端列表")
         except Exception as e:
-            logger.error(f"UDP消息处理失败: {e}")
+            logger.error(f"TCP消息处理失败: {e}")
     
     def _pause_all_folders_on_startup(self):
         """程序启动时，将所有游戏的同步状态设置为停止"""

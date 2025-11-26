@@ -3,7 +3,7 @@
 显示UDP广播的发送和接收消息
 """
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QTableWidgetItem
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, pyqtSlot
 from PyQt5.QtGui import QColor
 from qfluentwidgets import (
     CardWidget, SubtitleLabel, BodyLabel, CaptionLabel,
@@ -179,6 +179,26 @@ class MessageInterface(QWidget):
         
         # 更新统计
         self.update_stats()
+    
+    @pyqtSlot(str, str, str, str)
+    def _add_message_safe(self, message_type, topic, source_ip, data_json):
+        """
+        线程安全的消息添加（在主线程中调用）
+        
+        Args:
+            message_type: 消息类型（发送/接收）
+            topic: 消息主题
+            source_ip: 来源IP
+            data_json: JSON字符串格式的消息数据
+        """
+        try:
+            import json
+            # 解析JSON数据
+            data = json.loads(data_json) if data_json else None
+            # 调用原有的add_message方法
+            self.add_message(message_type, topic, source_ip, data)
+        except Exception as e:
+            logger.error(f"添加消息失败: {e}")
     
     def _format_message_detail(self, topic, data):
         """

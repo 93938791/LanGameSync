@@ -1065,6 +1065,76 @@ class GameInterface(QWidget):
             parent=self
         )
     
+    @pyqtSlot(str, str)
+    def _handle_game_message_safe(self, message_type, data_json):
+        """
+        线程安全的游戏消息处理（在主线程中调用）
+        
+        Args:
+            message_type: 消息类型
+            data_json: JSON字符串格式的消息数据
+        """
+        try:
+            import json
+            from PyQt5.QtCore import QTimer
+            
+            # 解析JSON数据
+            data = json.loads(data_json)
+            
+            if message_type == "game/starting":
+                # 收到游戏启动中消息，禁用启动按钮（只有在非主机状态下才禁用）
+                if not self.is_host:
+                    logger.info(f"收到游戏启动中消息: {data.get('player_name')} 正在启动 {data.get('world_name')}")
+                    self.launch_game_btn.setEnabled(False)
+                    self.launch_game_btn.setText("他人启动中...")
+                    self.launch_game_btn.setStyleSheet("""
+                        QPushButton {
+                            background: #cccccc;
+                            color: #666666;
+                        }
+                    """)
+            
+            elif message_type == "game/started":
+                # 收到游戏启动成功消息，按钮变为"加入游戏"（只有在非主机状态下才切换）
+                if not self.is_host:
+                    logger.info(f"收到游戏启动成功消息: {data.get('player_name')} 已开启服务器")
+                    self.game_host = data.get('host_ip', '')
+                    self.game_port = data.get('port', 0)
+                    self.game_world = data.get('world_name', '')
+                    
+                    self.launch_game_btn.setEnabled(True)
+                    self.launch_game_btn.setText("加入游戏")
+                    self.launch_game_btn.setStyleSheet("""
+                        QPushButton {
+                            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                                stop:0 #10b981,
+                                stop:1 #059669);
+                            color: white;
+                            font-weight: bold;
+                        }
+                        QPushButton:hover {
+                            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                                stop:0 #059669,
+                                stop:1 #047857);
+                        }
+                    """)
+                    
+                    logger.info(f"主机: {self.game_host}:{self.game_port}, 世界: {self.game_world}")
+            
+            elif message_type == "game/failed" or message_type == "game/host_offline":
+                # 游戏启动失败或主机掉线，恢复启动按钮
+                logger.info(f"收到游戏结束消息: {message_type}")
+                self.game_host = None
+                self.game_port = None
+                self.game_world = None
+                
+                self.launch_game_btn.setEnabled(True)
+                self.launch_game_btn.setText("启动游戏")
+                self.launch_game_btn.setStyleSheet("")
+        
+        except Exception as e:
+            logger.error(f"处理游戏消息失败: {e}")
+    
     def toggle_sync(self):
         """切换同步状态"""
         if not self.selected_game:
