@@ -17,7 +17,7 @@ from managers.sync_controller import SyncController
 from utils.logger import Logger
 from utils.config_cache import ConfigCache
 from ui.minecraft import MinecraftPathResolver
-from ui.pages import NetworkInterface, GameInterface, SettingsInterface, MessageInterface, SyncInterface
+from ui.pages import NetworkInterface, GameInterface, SettingsInterface, SyncInterface
 
 logger = Logger().get_logger("FluentMainWindow")
 
@@ -40,10 +40,8 @@ class FluentMainWindow(MSFluentWindow):
         self.scan_count = 0
         self.is_connected = False
         
-        # MQTT和游戏启动器
+        # TCP广播
         self.tcp_broadcast = None
-        self.game_launcher = None
-        self.server_info = None
         
         # 加载配置
         self.config_data = ConfigCache.load()
@@ -58,8 +56,6 @@ class FluentMainWindow(MSFluentWindow):
         setThemeColor('#07c160')  # 微信绿主题色
     
     def init_window(self):
-        """初始化窗口"""
-        self.setWindowTitle(f"{Config.APP_NAME}")
         
         # 设置固定尺寸（更宽，更矮）
         fixed_width = 1200
@@ -86,7 +82,6 @@ class FluentMainWindow(MSFluentWindow):
         # 创建页面
         self.network_interface = NetworkInterface(self)
         self.game_interface = GameInterface(self)
-        self.message_interface = MessageInterface(self)
         self.sync_interface = SyncInterface(self)
         self.settings_interface = SettingsInterface(self)
         
@@ -102,13 +97,6 @@ class FluentMainWindow(MSFluentWindow):
             interface=self.game_interface, 
             icon=FluentIcon.GAME, 
             text='游戏管理',
-            position=NavigationItemPosition.TOP
-        )
-        
-        self.addSubInterface(
-            interface=self.message_interface, 
-            icon=FluentIcon.MESSAGE, 
-            text='联机消息',
             position=NavigationItemPosition.TOP
         )
         
@@ -204,22 +192,6 @@ Syncthing事件回调(收到同步事件时自动调用)
             import json
             
             logger.info(f"收到TCP消息: {message_type}")
-            
-            # 使用QMetaObject.invokeMethod在主线程中执行UI更新
-            # 更新联机消息页面
-            if hasattr(self, 'message_interface'):
-                msg_type = "发送" if is_send else "接收"
-                # 将data转为JSON字符串，避免传递dict对象
-                data_json = json.dumps(data, ensure_ascii=False)
-                QMetaObject.invokeMethod(
-                    self.message_interface,
-                    "_add_message_safe",
-                    Qt.QueuedConnection,
-                    Q_ARG(str, msg_type),
-                    Q_ARG(str, message_type),
-                    Q_ARG(str, source_ip),
-                    Q_ARG(str, data_json)
-                )
             
             # 处理游戏相关消息
             if message_type.startswith("game/") and not is_send:
