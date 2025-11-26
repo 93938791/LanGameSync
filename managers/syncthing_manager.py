@@ -92,6 +92,9 @@ class SyncthingManager:
         # 启用所有设备的自动接受共享文件夹（多客户端同步必需）
         self._enable_auto_accept_folders()
         
+        # 自动暂停所有文件夹（防止历史配置自动同步）
+        self._pause_all_folders_on_startup()
+        
         # 启动事件监听
         self.start_event_listener()
         
@@ -213,6 +216,39 @@ class SyncthingManager:
                 return True
         except Exception as e:
             logger.error(f"启用自动接受失败: {e}")
+            return False
+    
+    def _pause_all_folders_on_startup(self):
+        """启动时自动暂停所有文件夹（防止历史配置自动同步）"""
+        try:
+            config = self.get_config()
+            if not config:
+                logger.warning("无法获取配置，跳过暂停文件夹")
+                return False
+            
+            folders = config.get('folders', [])
+            paused_count = 0
+            
+            for folder in folders:
+                if not folder.get('paused', False):
+                    folder['paused'] = True
+                    paused_count += 1
+            
+            if paused_count > 0:
+                # 同步保存配置
+                result = self.set_config(config, async_mode=False)
+                if result:
+                    logger.info(f"✅ 启动时自动暂停了 {paused_count} 个文件夹，防止自动同步")
+                    logger.info("🔒 需要在游戏页面手动启动同步")
+                    return True
+                else:
+                    logger.warning("暂停文件夹失败")
+                    return False
+            else:
+                logger.info("✅ 所有文件夹已是暂停状态")
+                return True
+        except Exception as e:
+            logger.error(f"暂停文件夹失败: {e}")
             return False
     
 
