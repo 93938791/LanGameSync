@@ -301,6 +301,9 @@ class SyncInterface(ScrollArea):
                 )
                 return
             
+            # 更新设备地址（用于设备IP变化后重新配置）
+            self._update_device_addresses()
+            
             # 触发所有设备重连（用于设备重新上线后重连）
             self.parent_window.syncthing_manager.restart_all_devices()
             
@@ -690,3 +693,50 @@ class SyncInterface(ScrollArea):
                 logger.info("已更新Syncthing配置，新设备已添加到所有同步文件夹")
         except Exception as e:
             logger.error(f"添加设备到文件夹失败: {e}")
+    
+    def _update_device_addresses(self):
+        """更新设备地址（从 EasyTier 获取最新的虚拟IP）"""
+        try:
+            if not hasattr(self.parent_window, 'controller') or not self.parent_window.controller:
+                return
+            
+            # 获取对等设备列表
+            peers = self.parent_window.controller.easytier.discover_peers(timeout=1)
+            if not peers:
+                return
+            
+            # 构建 hostname → IP 的映射
+            peer_map = {}
+            for peer in peers:
+                hostname = peer.get('hostname', '')
+                ipv4 = peer.get('ipv4', '')
+                if hostname and ipv4:
+                    peer_map[hostname] = ipv4
+            
+            # 更新设备地址
+            config = self.parent_window.syncthing_manager.get_config()
+            if not config:
+                return
+            
+            updated = False
+            for device in config.get('devices', []):
+                device_name = device.get('name', '')
+                device_id = device.get('deviceID', '')
+                
+                # 如果设备名在对等设备中，更新其地址
+                if device_name in peer_map:
+                    new_ip = peer_map[device_name]
+                    tcp_address = f"tcp://{new_ip}:22000"
+                    current_addresses = device.get('addresses', [])
+                    
+                    # 检查是否需要更新
+                    if tcp_address not in current_addresses:
+                        device['addresses'] = [tcp_address, 'dynamic']
+                        logger.info(f"更新设备地址: {device_name} ({device_id[:7]}...) → {tcp_address}")
+                        updated = True
+            
+            if updated:
+                self.parent_window.syncthing_manager.set_config(config, async_mode=True)
+                logger.info("✅ 已更新设备地址")
+        except Exception as e:
+            logger.error(f"更新设备地址失败: {e}")
