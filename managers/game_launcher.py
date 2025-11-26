@@ -93,6 +93,29 @@ class GameLauncher:
                     logger.info(f"  └─ UUID: {mojang_uuid}")
                     logger.info(f"  └─ Token: {mojang_token[:20] if mojang_token and len(mojang_token) > 20 else mojang_token}...")
                     logger.info(f"  └─ 离线模式: {use_offline}")
+                    
+                    # 🔑 关键：对于Microsoft账号，检查token是否过期并自动刷新
+                    if account_type == 'microsoft' and mojang_token:
+                        # 检查token是否过期
+                        is_token_expired = self._check_token_expired(mojang_token)
+                        if is_token_expired:
+                            logger.warning("⚠️ 检测到Microsoft token已过期！")
+                            logger.info("🔄 尝试自动刷新token...")
+                            refreshed_account = self._try_refresh_microsoft_token(launcher_path)
+                            if refreshed_account:
+                                logger.info("✅ Token刷新成功，使用新token")
+                                mojang_token = refreshed_account.get('access_token')
+                                mojang_uuid = refreshed_account.get('uuid', mojang_uuid)
+                            else:
+                                logger.error("❌ Token刷新失败！")
+                                logger.warning("   解决方案：")
+                                logger.warning("   1. 打开PCL2启动器")
+                                logger.warning("   2. 点击'启动游戏'刷新token")
+                                logger.warning("   3. 等游戏启动成功后关闭游戏")
+                                logger.warning("   4. 再尝试加入服务器")
+                                return False
+                        else:
+                            logger.info("✓ Token有效期内，无需刷新")
                 else:
                     logger.warning("⚠️ 从启动器读取账号失败，将使用离线模式")
                     logger.warning(f"  └─ 玩家名称: {player_name}")
@@ -123,9 +146,11 @@ class GameLauncher:
             logger.info(f"游戏目录: {self.game_dir}")
             logger.info(f"主类: {version_json.get('mainClass')}")
             logger.info(f"加入服务器: {server_ip}:{server_port}")
-            logger.info(f"===== 完整启动命令 =====")
-            logger.info(f"{' '.join(cmd)}")
-            logger.info(f"=======================")
+            logger.info(f"账号信息: use_offline={use_offline}, uuid={mojang_uuid}, token_length={len(mojang_token) if mojang_token else 0}")
+            logger.info(f"===== 完整启动命令 ======")
+            for i, arg in enumerate(cmd):
+                logger.info(f"  [{i}] {arg}")
+            logger.info(f"========================")
             
             # 创建游戏日志文件
             game_log_dir = self.game_dir / 'logs'
@@ -246,7 +271,11 @@ class GameLauncher:
             logger.info(f"游戏目录: {self.game_dir}")
             logger.info(f"主类: {version_json.get('mainClass')}")
             logger.info(f"启动游戏...")
-            logger.debug(f"启动命令: {' '.join(cmd)}")
+            logger.info(f"账号信息: use_offline={use_offline}, uuid={mojang_uuid}, token_length={len(mojang_token) if mojang_token else 0}")
+            logger.info(f"===== 完整启动命令 ======")
+            for i, arg in enumerate(cmd):
+                logger.info(f"  [{i}] {arg}")
+            logger.info(f"========================")
             
             # 创建游戏日志文件
             game_log_dir = self.game_dir / 'logs'
@@ -474,6 +503,84 @@ class GameLauncher:
         except Exception as e:
             logger.error(f"读取启动器账号失败: {e}")
             return None
+    
+    def _try_refresh_microsoft_token(self, launcher_path):
+        """
+        尝试刷新Microsoft token
+        
+        Args:
+            launcher_path: 启动器路径
+            
+        Returns:
+            刷新后的账号信息或None
+        """
+        try:
+            from managers.microsoft_auth import MicrosoftAuthRefresher
+            
+            refresher = MicrosoftAuthRefresher()
+            return refresher.refresh_token_from_launcher(launcher_path)
+            
+        except ImportError:
+            logger.error("未找到MicrosoftAuthRefresher模块")
+            return None
+        except Exception as e:
+            logger.warning(f"刷新Microsoft token失败: {e}")
+            return None
+    
+    def _check_token_expired(self, access_token):
+        """
+        检查JWT token是否过期
+        
+        Args:
+            access_token: JWT格式的accessToken
+            
+        Returns:
+            bool: True=已过期, False=未过期
+        """
+        try:
+            import base64
+            import datetime
+            
+            # JWT格式: header.payload.signature
+            parts = access_token.split('.')
+            if len(parts) < 2:
+                logger.warning("不是JWT格式token，无法检查过期时间")
+                return False
+            
+            # 解码payload
+            payload = parts[1]
+            padding = 4 - len(payload) % 4
+            if padding and padding != 4:
+                payload += '=' * padding
+            
+            decoded = base64.urlsafe_b64decode(payload)
+            token_data = json.loads(decoded)
+            
+            # 检查过期时间
+            exp = token_data.get('exp')
+            if not exp:
+                logger.warning("Token中没有过期时间信息")
+                return False
+            
+            # 转换为时间
+            exp_time = datetime.datetime.fromtimestamp(exp)
+            now = datetime.datetime.now()
+            
+            logger.info(f"Token过期时间: {exp_time}")
+            logger.info(f"当前时间: {now}")
+            
+            if exp_time < now:
+                time_diff = now - exp_time
+                logger.warning(f"Token已过期 {time_diff.days}天 {time_diff.seconds//3600}小时")
+                return True
+            else:
+                time_left = exp_time - now
+                logger.info(f"Token还剩 {time_left.seconds//3600}小时 {(time_left.seconds%3600)//60}分钟")
+                return False
+                
+        except Exception as e:
+            logger.warning(f"检查token过期时间失败: {e}")
+            return False
     
     def _read_version_json(self):
         """读取版本 JSON 文件"""

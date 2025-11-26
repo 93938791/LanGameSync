@@ -933,13 +933,33 @@ class GameInterface(QWidget):
                                 self._start_process_monitor(game_name, world_name, player_name)
                                 
                                 # 【关键】先更新按钮状态：隐藏启动按钮，显示关闭按钮（在广播之前）
-                                from PyQt5.QtCore import QTimer
-                                QTimer.singleShot(0, lambda: self.launch_game_btn.setText("启动游戏"))
-                                QTimer.singleShot(0, lambda: self.launch_game_btn.setEnabled(True))
-                                QTimer.singleShot(0, lambda: self.launch_game_btn.setVisible(False))
-                                QTimer.singleShot(0, lambda: self.join_game_btn.setVisible(False))
-                                QTimer.singleShot(0, lambda: self.close_game_btn.setVisible(True))
-                                QTimer.singleShot(0, lambda: self.close_game_btn.setEnabled(True))
+                                from PyQt5.QtCore import QTimer, QMetaObject, Q_ARG
+                                
+                                # 使用 QMetaObject.invokeMethod 确保线程安全地更新UI
+                                QMetaObject.invokeMethod(
+                                    self.launch_game_btn,
+                                    "setVisible",
+                                    Qt.QueuedConnection,
+                                    Q_ARG(bool, False)
+                                )
+                                QMetaObject.invokeMethod(
+                                    self.join_game_btn,
+                                    "setVisible",
+                                    Qt.QueuedConnection,
+                                    Q_ARG(bool, False)
+                                )
+                                QMetaObject.invokeMethod(
+                                    self.close_game_btn,
+                                    "setVisible",
+                                    Qt.QueuedConnection,
+                                    Q_ARG(bool, True)
+                                )
+                                QMetaObject.invokeMethod(
+                                    self.close_game_btn,
+                                    "setEnabled",
+                                    Qt.QueuedConnection,
+                                    Q_ARG(bool, True)
+                                )
                                 logger.info("✅ 已更新按钮状态：显示'关闭游戏'按钮")
                                 
                                 # 广播游戏启动成功（其他人按钮变为"加入游戏"）
