@@ -408,7 +408,7 @@ class GameInterface(QWidget):
         for game in game_list:
             item = QListWidgetItem()
             is_syncing = game.get('is_syncing', False)
-            sync_status = "启用同步" if is_syncing else "停止同步"
+            sync_status = "🔄 启用同步" if is_syncing else "⚪ 停止同步"
             item.setText(f"{game.get('name', '未命名')}\n{sync_status}")
             item.setData(Qt.UserRole, game)
             self.game_list.addItem(item)
@@ -430,7 +430,7 @@ class GameInterface(QWidget):
         self.game_path_label.setText(game_data.get('save_path', ''))
         
         is_syncing = game_data.get('is_syncing', False)
-        sync_status = "启用同步" if is_syncing else "停止同步"
+        sync_status = "🔄 启用同步" if is_syncing else "⚪ 停止同步"
         self.sync_status_label.setText(sync_status)
         self.sync_status_label.setStyleSheet(f"color: {'#107c10' if is_syncing else '#999999'}; font-size: 13px; font-weight: 500;")
         
@@ -1124,53 +1124,62 @@ class GameInterface(QWidget):
                     parent=self
                 )
                 return
-                        
-            # 获取所有设备ID（除了本机）
-            my_device_id = self.parent_window.syncthing_manager.device_id
-            device_ids = []
-            for device in config.get('devices', []):
-                dev_id = device.get('deviceID')
-                if dev_id and dev_id != my_device_id:
-                    device_ids.append(dev_id)
-                        
-            logger.info(f"将同步文件夹共享给 {len(device_ids)} 个设备")
-                        
-            if len(device_ids) == 0:
-                InfoBar.warning(
-                    title='提示',
-                    content="没有检测到其他设备，请确保其他玩家已连接到同一房间",
-                    orient=Qt.Horizontal,
-                    isClosable=True,
-                    position=InfoBarPosition.TOP,
-                    duration=3000,
-                    parent=self
+            
+            # 检查文件夹是否已存在
+            folder_exists = False
+            for folder in config.get('folders', []):
+                if folder.get('id') == folder_id:
+                    folder_exists = True
+                    logger.info(f"文件夹已存在: {folder_id}，直接恢复同步")
+                    break
+            
+            if folder_exists:
+                # 文件夹已存在，直接恢复同步
+                self.parent_window.syncthing_manager.resume_folder(folder_id)
+            else:
+                # 文件夹不存在，需要创建
+                # 获取所有设备ID（除了本机）
+                my_device_id = self.parent_window.syncthing_manager.device_id
+                device_ids = []
+                for device in config.get('devices', []):
+                    dev_id = device.get('deviceID')
+                    if dev_id and dev_id != my_device_id:
+                        device_ids.append(dev_id)
+                            
+                logger.info(f"将同步文件夹共享给 {len(device_ids)} 个设备")
+                            
+                if len(device_ids) == 0:
+                    InfoBar.warning(
+                        title='提示',
+                        content="没有检测到其他设备，请确保其他玩家已连接到同一房间",
+                        orient=Qt.Horizontal,
+                        isClosable=True,
+                        position=InfoBarPosition.TOP,
+                        duration=3000,
+                        parent=self
+                    )
+                
+                # 添加同步文件夹（直接启用）
+                success = self.parent_window.syncthing_manager.add_folder(
+                    folder_path=save_path,
+                    folder_id=folder_id,
+                    folder_label=folder_label,
+                    devices=device_ids,
+                    paused=False,  # 直接启用同步
+                    async_mode=False
                 )
-            
-            # 添加同步文件夹（初始为暂停状态）
-            # 注意：这里使用同步模式，确保配置提交成功后再继续
-            success = self.parent_window.syncthing_manager.add_folder(
-                folder_path=save_path,
-                folder_id=folder_id,
-                folder_label=folder_label,
-                devices=device_ids,
-                paused=True,  # 初始为暂停状态
-                async_mode=False
-            )
-            
-            if not success:
-                InfoBar.error(
-                    title='错误',
-                    content="添加同步文件夹失败",
-                    orient=Qt.Horizontal,
-                    isClosable=True,
-                    position=InfoBarPosition.TOP,
-                    duration=2000,
-                    parent=self
-                )
-                return
-            
-            # 立即恢复同步（启用）
-            self.parent_window.syncthing_manager.resume_folder(folder_id)
+                
+                if not success:
+                    InfoBar.error(
+                        title='错误',
+                        content="添加同步文件夹失败",
+                        orient=Qt.Horizontal,
+                        isClosable=True,
+                        position=InfoBarPosition.TOP,
+                        duration=2000,
+                        parent=self
+                    )
+                    return
             
             # 更新状态
             self.selected_game['is_syncing'] = True
