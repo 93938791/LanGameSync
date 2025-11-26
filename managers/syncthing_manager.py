@@ -6,6 +6,7 @@ import time
 import json
 import requests
 import threading
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from config import Config
 from utils.logger import Logger
@@ -33,6 +34,9 @@ class SyncthingManager:
         """启动Syncthing服务"""
         if not Config.SYNCTHING_BIN.exists():
             raise FileNotFoundError(f"Syncthing程序不存在: {Config.SYNCTHING_BIN}")
+        
+        # 在启动之前，直接修改配置文件，将所有文件夹设为暂停状态
+        self._pause_folders_in_config_file()
         
         # 先杀死占用端口的进程
         ProcessHelper.kill_by_port(Config.SYNCTHING_API_PORT)
@@ -249,6 +253,52 @@ class SyncthingManager:
                 return True
         except Exception as e:
             logger.error(f"暂停文件夹失败: {e}")
+            return False
+    
+    def _pause_folders_in_config_file(self):
+        """在Syncthing启动前，直接修改config.xml文件，将所有文件夹设为paused=true"""
+        try:
+            config_file = Path(Config.SYNCTHING_HOME) / "config.xml"
+            
+            # 如果配置文件不存在，跳过（首次运行）
+            if not config_file.exists():
+                logger.info("配置文件不存在，跳过暂停文件夹（首次运行）")
+                return True
+            
+            # 读取XML配置文件
+            tree = ET.parse(config_file)
+            root = tree.getroot()
+            
+            # 查找所有folder元素
+            paused_count = 0
+            for folder in root.findall('.//folder'):
+                paused_elem = folder.find('paused')
+                
+                if paused_elem is None:
+                    # 如果没有paused元素，添加一个
+                    paused_elem = ET.SubElement(folder, 'paused')
+                    paused_elem.text = 'true'
+                    paused_count += 1
+                elif paused_elem.text != 'true':
+                    # 如果是false，改为true
+                    paused_elem.text = 'true'
+                    paused_count += 1
+            
+            if paused_count > 0:
+                # 保存修改后的配置文件
+                tree.write(config_file, encoding='utf-8', xml_declaration=True)
+                logger.info(f"✅ 在启动前已将 {paused_count} 个文件夹设为暂停状态（配置文件层面）")
+                logger.info("🔒 确保启动时不会自动同步任何文件")
+            else:
+                logger.info("✅ 配置文件中的所有文件夹已是暂停状态")
+            
+            return True
+        except FileNotFoundError:
+            # 配置文件不存在，首次运行
+            logger.info("配置文件不存在，跳过暂停文件夹")
+            return True
+        except Exception as e:
+            logger.warning(f"修改配置文件失败: {e}，将在启动后通过API暂停")
             return False
     
 
