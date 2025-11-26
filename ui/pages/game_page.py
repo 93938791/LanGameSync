@@ -964,6 +964,9 @@ class GameInterface(QWidget):
                                 
                                 # 恢复按钮状态（先恢复再显示消息）
                                 from PyQt5.QtCore import QTimer
+                                # 恢复启动按钮的状态（虽然隐藏了，但下次显示时需要正常状态）
+                                QTimer.singleShot(0, lambda: self.launch_game_btn.setEnabled(True))
+                                QTimer.singleShot(0, lambda: self.launch_game_btn.setText("启动游戏"))
                                 QTimer.singleShot(0, lambda: self.launch_game_btn.setVisible(False))
                                 QTimer.singleShot(0, lambda: self.close_game_btn.setVisible(True))
                                 QTimer.singleShot(0, lambda: self.close_game_btn.setEnabled(True))
