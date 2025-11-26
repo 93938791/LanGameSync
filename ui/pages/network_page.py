@@ -2,7 +2,7 @@
 联机设置页面 - Fluent Design 风格
 """
 import os
-from PyQt5.QtCore import Qt, QTimer, QPropertyAnimation, QRect
+from PyQt5.QtCore import Qt, QTimer, QPropertyAnimation, QRect, pyqtSlot
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidgetItem, QHeaderView, QGraphicsOpacityEffect
 from PyQt5.QtGui import QFont, QColor, QPixmap
 from qfluentwidgets import (
@@ -631,111 +631,131 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
             logger.error(f"断开连接失败: {e}")
     
     def update_clients_list(self):
-        """更新客户端列表（显示在设备卡片中）——优化版"""
+        """更新客户端列表（显示在设备卡片中）——异步版本，不阻塞UI"""
         if not self.parent_window.is_connected:
             return
         
-        try:
-            # 获取对等设备列表（减少timeout到1秒，减少阻塞时间）
-            peers = self.parent_window.controller.easytier.discover_peers(timeout=1)
-            
-            # 如果获取失败或为空，保留当前显示（避免闪烁）
-            if not peers:
-                logger.debug("未发现对等设备，保留当前显示")
-                return
-            
-            # 收集设备信息
-            devices = []
-            
-            # 添加本机
-            my_ip = self.parent_window.controller.easytier.virtual_ip or "unknown"
-            devices.append({
-                "name": "本机",
-                "ip": my_ip,
-                "is_self": True
-            })
-            
-            # 获取当前Syncthing连接状态
-            connections = self.parent_window.syncthing_manager.get_connections()
-            connected_device_ids = set()
-            if connections and connections.get('connections'):
-                for dev_id, conn_info in connections['connections'].items():
-                    if conn_info.get('connected'):
-                        connected_device_ids.add(dev_id)
-            
-            # 添加其他设备（过滤掉本机）
-            seen_ips = set([my_ip])
-            
-            for peer in peers:
-                ipv4 = peer.get('ipv4', '')
-                hostname = peer.get('hostname', 'Unknown')
+        # 在后台线程中执行，不阻塞UI
+        import threading
+        def update_thread():
+            try:
+                # 获取对等设备列表
+                peers = self.parent_window.controller.easytier.discover_peers(timeout=1)
                 
-                # 过滤掉本机（通过IP和hostname双重检查）
-                if ipv4 and ipv4 not in seen_ips and hostname != Config.HOSTNAME:
-                    # 尝试获取远程设备的Syncthing ID
-                    device_id = self._get_remote_syncthing_id(ipv4)
-                    if device_id and device_id != self.parent_window.syncthing_manager.device_id:
-                        # 添加设备到Syncthing（如果已存在则返回None）
-                        # 传递虚拟IP地址，使Syncthing可以通过虚拟网络连接
-                        result = self.parent_window.syncthing_manager.add_device(
-                            device_id=device_id,
-                            device_name=hostname,
-                            device_address=ipv4  # 传递虚拟IP
-                        )
-                        # 只有新增成功时才打印日志（None表示已存在）
-                        if result is True:
-                            logger.info(f"自动发现并添加设备: {hostname} ({device_id[:7]}...) - {ipv4}")
-                            # 将设备添加到所有正在同步的文件夹
-                            self._add_device_to_active_folders(device_id)
-                        # 如果设备已存在但未连接，触发重连
-                        elif result is None and device_id not in connected_device_ids:
-                            # 日志去重：只有距离上次日志超过30秒才输出
-                            import time
-                            current_time = time.time()
-                            last_log_time = self.last_reconnect_log_time.get(device_id, 0)
-                            if current_time - last_log_time > 30:  # 30秒内不重复输出
-                                logger.info(f"🔄 设备 {hostname} ({device_id[:7]}...) 已上线但未连接，触发重连...")
-                                self.last_reconnect_log_time[device_id] = current_time
-                            self.parent_window.syncthing_manager._restart_device_connection(device_id)
+                # 如果获取失败或为空，保留当前显示（避免闪烁）
+                if not peers:
+                    logger.debug("未发现对等设备，保留当前显示")
+                    return
+                
+                # 收集设备信息
+                devices = []
+                
+                # 添加本机
+                my_ip = self.parent_window.controller.easytier.virtual_ip or "unknown"
+                devices.append({
+                    "name": "本机",
+                    "ip": my_ip,
+                    "is_self": True
+                })
+                
+                # 获取当前Syncthing连接状态
+                connections = self.parent_window.syncthing_manager.get_connections()
+                connected_device_ids = set()
+                if connections and connections.get('connections'):
+                    for dev_id, conn_info in connections['connections'].items():
+                        if conn_info.get('connected'):
+                            connected_device_ids.add(dev_id)
+                
+                # 添加其他设备（过滤掉本机）
+                seen_ips = set([my_ip])
+                
+                for peer in peers:
+                    ipv4 = peer.get('ipv4', '')
+                    hostname = peer.get('hostname', 'Unknown')
                     
-                    # 获取延迟（如果有）
-                    latency_str = peer.get('latency', '0ms')
-                    latency = 0
-                    if latency_str and latency_str != '-':
-                        try:
-                            latency = int(latency_str.replace('ms', '').strip())
-                        except:
-                            latency = 0
-                    
-                    devices.append({
-                        "name": hostname,
-                        "ip": ipv4,
-                        "is_self": False,
-                        "latency": latency
-                    })
-                    
-                    seen_ips.add(ipv4)
-            
-            # 更新设备卡片（动态添加/删除）
-            # 先清空现有设备
-            for widget in self.device_widgets:
-                widget.deleteLater()
-            self.device_widgets.clear()
-            
-            # 动态添加设备卡片
-            for device in devices:
-                device_card = self.create_single_device_card(
-                    device_name=device["name"],
-                    device_ip=device["ip"],
-                    is_self=device["is_self"],
-                    latency=device.get("latency", 0)
-                )
-                self.devices_layout.addWidget(device_card)
-                self.device_widgets.append(device_card)
-            
-            logger.info(f"更新客户端列表: 总计 {len(devices)} 台设备")
-        except Exception as e:
-            logger.error(f"更新客户端列表失败: {e}")
+                    # 过滤掉本机（通过IP和hostname双重检查）
+                    if ipv4 and ipv4 not in seen_ips and hostname != Config.HOSTNAME:
+                        # 尝试获取远程设备的Syncthing ID
+                        device_id = self._get_remote_syncthing_id(ipv4)
+                        if device_id and device_id != self.parent_window.syncthing_manager.device_id:
+                            # 添加设备到Syncthing（如果已存在则返回None）
+                            # 传递虚拟IP地址，使Syncthing可以通过虚拟网络连接
+                            result = self.parent_window.syncthing_manager.add_device(
+                                device_id=device_id,
+                                device_name=hostname,
+                                device_address=ipv4  # 传递虚拟IP
+                            )
+                            # 只有新增成功时才打印日志（None表示已存在）
+                            if result is True:
+                                logger.info(f"自动发现并添加设备: {hostname} ({device_id[:7]}...) - {ipv4}")
+                                # 将设备添加到所有正在同步的文件夹
+                                self._add_device_to_active_folders(device_id)
+                            # 如果设备已存在但未连接，触发重连
+                            elif result is None and device_id not in connected_device_ids:
+                                # 日志去重：只有距离上次日志超过30秒才输出
+                                import time
+                                current_time = time.time()
+                                last_log_time = self.last_reconnect_log_time.get(device_id, 0)
+                                if current_time - last_log_time > 30:  # 30秒内不重复输出
+                                    logger.info(f"🔄 设备 {hostname} ({device_id[:7]}...) 已上线但未连接，触发重连...")
+                                    self.last_reconnect_log_time[device_id] = current_time
+                                self.parent_window.syncthing_manager._restart_device_connection(device_id)
+                        
+                        # 获取延迟（如果有）
+                        latency_str = peer.get('latency', '0ms')
+                        latency = 0
+                        if latency_str and latency_str != '-':
+                            try:
+                                latency = int(latency_str.replace('ms', '').strip())
+                            except:
+                                latency = 0
+                        
+                        devices.append({
+                            "name": hostname,
+                            "ip": ipv4,
+                            "is_self": False,
+                            "latency": latency
+                        })
+                        
+                        seen_ips.add(ipv4)
+                
+                # 在主线程中更新UI
+                from PyQt5.QtCore import QMetaObject, Qt
+                def update_ui():
+                    try:
+                        # 更新设备卡片（动态添加/删除）
+                        # 先清空现有设备
+                        for widget in self.device_widgets:
+                            widget.deleteLater()
+                        self.device_widgets.clear()
+                        
+                        # 动态添加设备卡片
+                        for device in devices:
+                            device_card = self.create_single_device_card(
+                                device_name=device["name"],
+                                device_ip=device["ip"],
+                                is_self=device["is_self"],
+                                latency=device.get("latency", 0)
+                            )
+                            self.devices_layout.addWidget(device_card)
+                            self.device_widgets.append(device_card)
+                        
+                        logger.info(f"更新客户端列表: 总计 {len(devices)} 台设备")
+                    except Exception as e:
+                        logger.error(f"更新UI失败: {e}")
+                
+                QMetaObject.invokeMethod(self, "_update_ui_safe", Qt.QueuedConnection,
+                                       Qt.Q_ARG(object, update_ui))
+                
+            except Exception as e:
+                logger.error(f"后台更新客户端列表失败: {e}")
+        
+        threading.Thread(target=update_thread, daemon=True, name="UpdateClientsThread").start()
+    
+    @pyqtSlot(object)
+    def _update_ui_safe(self, callback):
+        """线程安全的UI更新回调"""
+        callback()
     
     def _get_remote_syncthing_id(self, peer_ip):
         """获取远程设备的Syncthing ID"""
