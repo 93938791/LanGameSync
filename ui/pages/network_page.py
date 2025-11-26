@@ -495,8 +495,13 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
     
     def on_connect_progress(self, message):
         """连接进度回调"""
-        # 可以在IP栏显示进度
-        self.current_ip_label.setText(f"当前 IP: {message}")
+        # 不在连接过程中显示IP，避免显示TUN设备IP
+        # 只显示进度信息
+        if message and not message.startswith("10.144"):
+            self.current_ip_label.setText(f"当前 IP: {message}")
+        else:
+            # 连接过程中不显示IP，等待成功后再显示
+            pass
     
     def on_connected(self, success, message):
         """连接完成回调"""

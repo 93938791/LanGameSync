@@ -274,13 +274,32 @@ Syncthing事件回调(收到同步事件时自动调用)
                         except Exception as e:
                             logger.error(f"停止Syncthing失败: {e}")
                     
-                    # 3. 断开EasyTier网络
+                    # 3. 断开EasyTier网络（确保完全清理）
                     if hasattr(self, 'controller') and self.controller:
                         if hasattr(self.controller, 'easytier') and self.controller.easytier:
                             try:
                                 logger.info("正在断开EasyTier网络...")
                                 self.controller.easytier.stop()
                                 logger.info("EasyTier网络已断开")
+                                
+                                # 再次确认清理（防止残留）
+                                import psutil
+                                import time
+                                time.sleep(1)  # 等待1秒
+                                
+                                remaining_count = 0
+                                for proc in psutil.process_iter(['pid', 'name']):
+                                    try:
+                                        if proc.info['name'] and 'easytier-core' in proc.info['name'].lower():
+                                            remaining_count += 1
+                                            logger.warning(f"发现残留进程: {proc.info['name']} (PID: {proc.info['pid']})，强制清理...")
+                                            proc.kill()
+                                            proc.wait(timeout=2)
+                                    except:
+                                        pass
+                                
+                                if remaining_count > 0:
+                                    logger.info(f"清理了 {remaining_count} 个残留的EasyTier进程")
                             except Exception as e:
                                 logger.error(f"断开EasyTier失败: {e}")
                     
