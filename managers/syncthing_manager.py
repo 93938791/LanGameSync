@@ -907,38 +907,9 @@ class SyncthingManager:
     def get_connections(self):
         """获取连接状态"""
         try:
-            # 先检查配置中的设备列表
-            config = self.get_config()
-            if config:
-                configured_devices = config.get('devices', [])
-                logger.info(f"📋 配置中的设备数: {len(configured_devices)}")
-                for dev in configured_devices:
-                    dev_id = dev.get('deviceID', '')[:7]
-                    dev_name = dev.get('name', 'Unknown')
-                    dev_addrs = dev.get('addresses', [])
-                    logger.info(f"   配置设备: [{dev_id}...] {dev_name}, 地址: {dev_addrs}")
-            
-            # 再检查实际连接状态
             resp = requests.get(f"{self.api_url}/rest/system/connections", headers=self.headers, timeout=5)
             resp.raise_for_status()
             connections = resp.json()
-            
-            # 输出详细连接状态
-            logger.info("🔍 Syncthing连接状态:")
-            total_devices = connections.get('total', {})
-            logger.info(f"   总计: {len(connections.get('connections', {}))} 个设备")
-            
-            for device_id, conn in connections.get('connections', {}).items():
-                # 跳过本机ID
-                if device_id == self.device_id:
-                    logger.debug(f"   跳过本机设备: [{device_id[:7]}...]")
-                    continue
-                    
-                connected = conn.get('connected', False)
-                address = conn.get('address', 'N/A')
-                client_version = conn.get('clientVersion', 'N/A')
-                logger.info(f"   [{device_id[:7]}...] 连接={connected}, 地址={address}, 版本={client_version}")
-            
             return connections
         except Exception as e:
             logger.error(f"获取连接状态失败: {e}")
