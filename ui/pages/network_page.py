@@ -692,7 +692,7 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
             logger.info("设备自动发现线程已停止")
     
     def _add_device_to_active_folders(self, device_id):
-        """将新发现的设备添加到所有正在同步的文件夹"""
+        """将新发现的设备添加到所有同步文件夹（包括暂停的）"""
         try:
             config = self.parent_window.syncthing_manager.get_config()
             if not config:
@@ -702,10 +702,7 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
             updated = False
             
             for folder in folders:
-                # 只处理未暂停的文件夹
-                if folder.get('paused', False):
-                    continue
-                
+                # 处理所有文件夹（包括暂停的），确保设备列表完整
                 # 检查设备是否已在文件夹中
                 folder_devices = folder.get('devices', [])
                 device_ids = [d['deviceID'] for d in folder_devices]
@@ -715,10 +712,11 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
                     folder_devices.append({'deviceID': device_id})
                     folder['devices'] = folder_devices
                     updated = True
-                    logger.info(f"将设备 {device_id[:7]}... 添加到文件夹 {folder.get('id')}")
+                    is_paused = folder.get('paused', False)
+                    logger.info(f"将设备 {device_id[:7]}... 添加到文件夹 {folder.get('id')} (暂停={is_paused})")
             
             if updated:
                 self.parent_window.syncthing_manager.set_config(config, async_mode=True)
-                logger.info("已更新Syncthing配置，新设备已添加到同步文件夹")
+                logger.info("已更新Syncthing配置，新设备已添加到所有同步文件夹")
         except Exception as e:
             logger.error(f"添加设备到文件夹失败: {e}")

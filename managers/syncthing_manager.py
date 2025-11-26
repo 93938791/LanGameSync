@@ -518,6 +518,9 @@ class SyncthingManager:
                 folder["paused"] = paused  # 更新暂停状态
                 if devices:
                     folder["devices"] = [{"deviceID": dev_id} for dev_id in devices]
+                    logger.info(f"✅ 更新文件夹设备列表: 共享给 {len(devices)} 个设备: {[dev_id[:7] + '...' for dev_id in devices]}")
+                else:
+                    logger.warning(f"⚠️ 文件夹 {folder_id} 未共享给任何设备")
                 logger.info(f"更新文件夹: 延迟={watcher_delay}秒, 暂停={paused}")
                 return self.set_config(config, async_mode=async_mode)
         
@@ -550,7 +553,12 @@ class SyncthingManager:
             "markerName": ".stfolder"
         }
         
-        logger.info(f"创建同步文件夹: {folder_id}, 监控延迟: {watcher_delay}秒, 暂停状态: {paused}")
+        # 输出详细的设备共享信息
+        if devices:
+            logger.info(f"✅ 创建同步文件夹: {folder_id}, 共享给 {len(devices)} 个设备: {[dev_id[:7] + '...' for dev_id in devices]}")
+        else:
+            logger.warning(f"⚠️ 创建同步文件夹: {folder_id}, 但未共享给任何设备")
+        logger.info(f"文件夹配置: 延迟={watcher_delay}秒, 暂停={paused}")
         config["folders"].append(new_folder)
         
         return self.set_config(config, async_mode=async_mode)
@@ -662,6 +670,15 @@ class SyncthingManager:
             # 查找文件夹
             for folder in config.get('folders', []):
                 if folder['id'] == folder_id:
+                    # 检查是否有共享设备
+                    folder_devices = folder.get('devices', [])
+                    if not folder_devices:
+                        logger.warning(f"⚠️ 文件夹 {folder_id} 未共享给任何设备，无法同步")
+                        return False
+                    
+                    device_ids = [d['deviceID'] for d in folder_devices]
+                    logger.info(f"✅ 恢复文件夹同步: {folder_id}, 共享给 {len(device_ids)} 个设备: {[dev_id[:7] + '...' for dev_id in device_ids]}")
+                    
                     folder['paused'] = False
                     logger.info(f"已恢复文件夹同步: {folder_id}")
                     # 使用同步模式，确保配置立即生效

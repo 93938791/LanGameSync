@@ -214,18 +214,21 @@ class SyncController:
         """
         logger.info(f"配置同步文件夹: {folder_path}")
         
-        # 获取所有已发现设备的ID
-        device_ids = [dev["device_id"] for dev in self.discovered_devices]
+        # 获取所有已发现设备的ID（除了本机）
+        device_ids = [dev["device_id"] for dev in self.discovered_devices if dev["device_id"] != self.syncthing.device_id]
         
-        # 添加文件夹到Syncthing，并共享给所有设备
+        logger.info(f"准备共享给 {len(device_ids)} 台设备: {[dev_id[:7] + '...' for dev_id in device_ids]}")
+        
+        # 添加文件夹到Syncthing，并共享给所有设备（默认暂停）
         success = self.syncthing.add_folder(
             folder_path=folder_path,
-            devices=device_ids
+            devices=device_ids,  # 明确传递设备列表
+            paused=True  # 默认暂停，需手动启动
         )
         
         if success:
             self.sync_folders.append(folder_path)
-            logger.info(f"同步文件夹配置成功，共享给 {len(device_ids)} 台设备")
+            logger.info(f"同步文件夹配置成功，已共享给 {len(device_ids)} 台设备（暂停状态）")
         else:
             logger.error("同步文件夹配置失败")
         

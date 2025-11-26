@@ -430,8 +430,12 @@ class GameInterface(QWidget):
         self.game_name_label.setText(game_data.get('name', '未命名'))
         self.game_path_label.setText(game_data.get('save_path', ''))
         
-        # 检查实际的同步状态（从Syncthing获取）
+        # 检查实际的同步状态（从 Syncthing 获取）
         is_syncing = self._check_actual_sync_status(game_data)
+                
+        # 同步更新 selected_game 中的状态（关键修复：确保 toggle_sync 可以正确判断）
+        self.selected_game['is_syncing'] = is_syncing
+                
         sync_status = "🔄 启用同步" if is_syncing else "⚪ 停止同步"
         self.sync_status_label.setText(sync_status)
         self.sync_status_label.setStyleSheet(f"color: {'#107c10' if is_syncing else '#999999'}; font-size: 13px; font-weight: 500;")

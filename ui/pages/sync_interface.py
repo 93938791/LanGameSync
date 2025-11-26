@@ -508,14 +508,15 @@ class SyncInterface(ScrollArea):
                 self.device_empty_hint.hide()
                 self.devices_table.show()
                 
-                # 调整列宽
+                # 调整列宽：设备名称自适应，设备ID占用更多空间
                 from PyQt5.QtWidgets import QHeaderView
-                self.devices_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-                self.devices_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+                self.devices_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+                self.devices_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)  # 设备ID占据主要空间
                 self.devices_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
                 self.devices_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
                 
-                logger.info(f"设备列表: 总计 {device_count} 个设备")
+                # 移除频繁的设备列表日志
+                # logger.info(f"设备列表: 总计 {device_count} 个设备")
         except Exception as e:
             logger.error(f"刷新设备列表失败: {e}")
     
@@ -646,7 +647,7 @@ class SyncInterface(ScrollArea):
             return None
     
     def _add_device_to_active_folders(self, device_id):
-        """将新发现的设备添加到所有正在同步的文件夹"""
+        """将新发现的设备添加到所有同步文件夹（包括暂停的）"""
         try:
             config = self.parent_window.syncthing_manager.get_config()
             if not config:
@@ -656,10 +657,7 @@ class SyncInterface(ScrollArea):
             updated = False
             
             for folder in folders:
-                # 只处理未暂停的文件夹
-                if folder.get('paused', False):
-                    continue
-                
+                # 处理所有文件夹（包括暂停的），确保设备列表完整
                 # 检查设备是否已在文件夹中
                 folder_devices = folder.get('devices', [])
                 device_ids = [d['deviceID'] for d in folder_devices]
@@ -669,10 +667,11 @@ class SyncInterface(ScrollArea):
                     folder_devices.append({'deviceID': device_id})
                     folder['devices'] = folder_devices
                     updated = True
-                    logger.info(f"将设备 {device_id[:7]}... 添加到文件夹 {folder.get('id')}")
+                    is_paused = folder.get('paused', False)
+                    logger.info(f"将设备 {device_id[:7]}... 添加到文件夹 {folder.get('id')} (暂停={is_paused})")
             
             if updated:
                 self.parent_window.syncthing_manager.set_config(config, async_mode=True)
-                logger.info("已更新Syncthing配置，新设备已添加到同步文件夹")
+                logger.info("已更新Syncthing配置，新设备已添加到所有同步文件夹")
         except Exception as e:
             logger.error(f"添加设备到文件夹失败: {e}")
