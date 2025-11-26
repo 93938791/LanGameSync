@@ -763,6 +763,18 @@ class SyncthingManager:
     def get_connections(self):
         """获取连接状态"""
         try:
+            # 先检查配置中的设备列表
+            config = self.get_config()
+            if config:
+                configured_devices = config.get('devices', [])
+                logger.info(f"📋 配置中的设备数: {len(configured_devices)}")
+                for dev in configured_devices:
+                    dev_id = dev.get('deviceID', '')[:7]
+                    dev_name = dev.get('name', 'Unknown')
+                    dev_addrs = dev.get('addresses', [])
+                    logger.info(f"   配置设备: [{dev_id}...] {dev_name}, 地址: {dev_addrs}")
+            
+            # 再检查实际连接状态
             resp = requests.get(f"{self.api_url}/rest/system/connections", headers=self.headers, timeout=5)
             resp.raise_for_status()
             connections = resp.json()
