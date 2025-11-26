@@ -39,15 +39,13 @@ class SyncthingManager:
         
         # 启动参数：禁用浏览器、禁用升级检查
         # gui-address=0.0.0.0 表示监听所有网络接口（包括虚拟网卡）
-        # listen-address 指定同步监听地址（默认tcp://0.0.0.0:22000）
+        # Syncthing v2.0+ 不再支持 --listen-address，监听地址通过配置文件管理
         args = [
             "--no-browser",
             "--no-upgrade",
             f"--gui-address=0.0.0.0:{Config.SYNCTHING_API_PORT}",
             f"--gui-apikey={Config.SYNCTHING_API_KEY}",
-            "--home", str(Config.SYNCTHING_HOME),
-            # 明确指定同步端口监听所有接口，确保可以通过虚拟IP访问
-            "--listen-address", "tcp://0.0.0.0:22000"
+            "--home", str(Config.SYNCTHING_HOME)
         ]
         
         # 启动进程
@@ -71,6 +69,9 @@ class SyncthingManager:
         
         # 禁用本地发现和全局发现，强制只使用EasyTier虚拟IP
         self._disable_discovery()
+        
+        # 配置监听地址（确保监听所有接口）
+        self._configure_listen_address()
         
         # 启用所有设备的自动接受共享文件夹（多客户端同步必需）
         self._enable_auto_accept_folders()
@@ -190,6 +191,47 @@ class SyncthingManager:
                 return True
         except Exception as e:
             logger.error(f"启用自动接受失败: {e}")
+            return False
+    
+    def _configure_listen_address(self):
+        """配置监听地址，确保监听所有网络接口（Syncthing v2.0+）"""
+        try:
+            config = self.get_config()
+            if not config:
+                logger.warning("无法获取配置，跳过配置监听地址")
+                return False
+            
+            # 检查options.listenAddresses配置
+            options = config.get('options', {})
+            listen_addresses = options.get('listenAddresses', [])
+            
+            # 默认监听地址：所有接口的 22000 端口
+            default_address = "tcp://0.0.0.0:22000"
+            
+            # 检查是否已配置
+            if default_address not in listen_addresses:
+                # 添加默认监听地址
+                if not listen_addresses:
+                    listen_addresses = [default_address]
+                elif listen_addresses[0] != default_address:
+                    listen_addresses.insert(0, default_address)
+                
+                options['listenAddresses'] = listen_addresses
+                config['options'] = options
+                
+                # 保存配置
+                result = self.set_config(config, async_mode=False)
+                if result:
+                    logger.info(f"✅ 已配置监听地址: {default_address}")
+                    return True
+                else:
+                    logger.warning("配置监听地址失败")
+                    return False
+            else:
+                logger.info(f"✅ 监听地址已配置: {listen_addresses}")
+                return True
+        except Exception as e:
+            logger.error(f"配置监听地址失败: {e}")
             return False
     
     def api_request(self, endpoint, method="GET", data=None):
