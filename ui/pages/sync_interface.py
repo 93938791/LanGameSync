@@ -24,10 +24,10 @@ class SyncInterface(ScrollArea):
         super().__init__()
         self.parent_window = parent_window
         
-        # 创建自动刷新定时器（每5秒刷新一次）
+        # 创建自动刷新定时器（从5秒增加到10秒，减少CPU占用）
         self.auto_refresh_timer = QTimer(self)
         self.auto_refresh_timer.timeout.connect(self._auto_refresh)
-        self.auto_refresh_timer.setInterval(5000)  # 5秒
+        self.auto_refresh_timer.setInterval(10000)  # 10秒
         
         # 设置滚动区域样式
         self.setObjectName("syncInterface")
@@ -549,7 +549,7 @@ class SyncInterface(ScrollArea):
         
         # 启动自动刷新定时器
         self.auto_refresh_timer.start()
-        logger.info("已启动自动刷新，每5秒刷新一次")
+        logger.info("已启动自动刷新，每10秒刷新一次")
     
     def hideEvent(self, event):
         """页面隐藏事件：离开页面时停止自动刷新"""
@@ -633,24 +633,14 @@ class SyncInterface(ScrollArea):
     def _get_remote_syncthing_id(self, peer_ip):
         """获取远程设备的Syncthing ID"""
         try:
-            proxies = {
-                'http': f'socks5h://127.0.0.1:{Config.EASYTIER_SOCKS5_PORT}',
-                'https': f'socks5h://127.0.0.1:{Config.EASYTIER_SOCKS5_PORT}'
-            }
-            
             url = f"http://{peer_ip}:{Config.SYNCTHING_API_PORT}/rest/system/status"
             headers = {"X-API-Key": Config.SYNCTHING_API_KEY}
             
-            logger.info(f"尝试通过SOCKS5访问: {url}")
-            resp = requests.get(url, headers=headers, proxies=proxies, timeout=5)
+            resp = requests.get(url, headers=headers, timeout=5)
             resp.raise_for_status()
             
             device_id = resp.json()["myID"]
-            logger.info(f"✅ 成功从 {peer_ip} 获取到设备ID: {device_id[:7]}...")
             return device_id
-        except requests.exceptions.ProxyError as e:
-            logger.warning(f"❌ SOCKS5代理连接失败（{peer_ip}）: {e}")
-            return None
         except requests.exceptions.Timeout:
             logger.warning(f"❌ 连接到 {peer_ip} 超时（可能对方Syncthing还未启动）")
             return None

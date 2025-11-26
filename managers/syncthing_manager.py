@@ -11,7 +11,6 @@ from pathlib import Path
 from config import Config
 from utils.logger import Logger
 from utils.process_helper import ProcessHelper
-from managers.socks5_forwarder import SOCKS5Forwarder
 
 logger = Logger().get_logger("SyncthingManager")
 
@@ -26,9 +25,6 @@ class SyncthingManager:
         self.event_thread = None
         self.event_running = False
         self.event_callbacks = []  # 事件回调列表
-        self.socks5_forwarder = SOCKS5Forwarder()  # SOCKS5 端口转发器
-        self.device_forward_ports = {}  # {device_id: local_port} 设备ID到本地转发端口的映射
-        self.next_forward_port = 23001  # 下一个可用的转发端口
     
     def start(self):
         """启动Syncthing服务"""
@@ -44,18 +40,6 @@ class SyncthingManager:
         # 准备环境变量
         env = os.environ.copy()
         env["STHOMEDIR"] = str(Config.SYNCTHING_HOME)
-        
-        # 无TUN模式下，配置Syncthing使用SOCKS5代理进行出站连接
-        # 这样Syncthing主动连接其他设备时也可以通过SOCKS5访问虚拟IP
-        # 注意：Syncthing使用Go语言，优先识别小写环境变量
-        proxy_url = f"socks5://127.0.0.1:{Config.EASYTIER_SOCKS5_PORT}"
-        env["all_proxy"] = proxy_url
-        env["ALL_PROXY"] = proxy_url  # 也设置大写版本，确保兼容
-        # 禁止回退到直接连接，确保所有连接都通过SOCKS5代理
-        env["ALL_PROXY_NO_FALLBACK"] = "1"
-        logger.info(f"✅ 配置Syncthing环境变量:")
-        logger.info(f"   all_proxy / ALL_PROXY = {proxy_url}")
-        logger.info(f"   ALL_PROXY_NO_FALLBACK = 1")
         
         # 启动参数：禁用浏览器、禁用升级检查
         # gui-address=0.0.0.0 表示监听所有网络接口（包括虚拟网卡）
@@ -103,12 +87,6 @@ class SyncthingManager:
     
     def stop(self):
         """停止Syncthing服务（异步操作，不阻塞）"""
-        # 停止所有端口转发
-        try:
-            self.socks5_forwarder.stop_all()
-        except Exception as e:
-            logger.warning(f"停止端口转发失败: {e}")
-        
         # 停止事件监听
         self.stop_event_listener()
         
@@ -173,7 +151,7 @@ class SyncthingManager:
             
             if result:
                 logger.info(f"✅ 已配置Syncthing发现：本地发现={original_local}→False, 全局发现={original_global}→False, 中继={original_relay}→False")
-                logger.info("🚫 已禁用所有自动发现，强制使用配置的虚拟IP地址（通过SOCKS5）")
+                logger.info("🚫 已禁用所有自动发现，强制使用配置的虚拟IP地址")
             else:
                 logger.warning("配置发现失败")
             
@@ -276,7 +254,6 @@ class SyncthingManager:
             listen_addresses = options.get('listenAddresses', [])
             
             # 默认监听地址：所有接口的 22000 端口
-            # 注意：在无TUN模式下，监听0.0.0.0可以被EasyTier接收
             default_address = "tcp://0.0.0.0:22000"
             
             # 检查是否已配置
@@ -509,7 +486,7 @@ class SyncthingManager:
                 device_exists = True
                 logger.debug(f"设备已存在: {device_id}")
                 
-                # 无TUN模式下，确保使用虚拟IP地址(通过SOCKS5代理)
+                # 确保使用虚拟IP地址
                 if device_address:
                     tcp_address = f"tcp://{device_address}:22000"
                     current_addresses = device.get("addresses", [])
@@ -517,7 +494,7 @@ class SyncthingManager:
                     # 检查是否需要更新地址
                     if tcp_address not in current_addresses:
                         device["addresses"] = [tcp_address, "dynamic"]
-                        logger.info(f"更新已存在设备地址(通过SOCKS5): {tcp_address}")
+                        logger.info(f"更新已存在设备地址: {tcp_address}")
                         
                         # 保存配置
                         result = self.set_config(config, async_mode=False)
@@ -531,15 +508,14 @@ class SyncthingManager:
         
         # 设备不存在，需要添加
         if not device_exists:
-            # 无TUN模式下，使用虚拟IP地址 + Syncthing的SOCKS5代理
-            # Syncthing会通过环境变量 all_proxy 使用SOCKS5访问虚拟IP
+            # 使用虚拟IP地址
             addresses = ["dynamic"]  # 默认使用dynamic作为备用
             
             if device_address:
-                # 配置虚拟IP地址，Syncthing会通过SOCKS5代理主动连接
+                # 配置虚拟IP地址
                 tcp_address = f"tcp://{device_address}:22000"
                 addresses = [tcp_address, "dynamic"]  # 虚拟IP优先，dynamic备用
-                logger.info(f"使用虚拟IP地址(通过SOCKS5代理): {tcp_address}")
+                logger.info(f"使用虚拟IP地址: {tcp_address}")
             else:
                 logger.warning("未提供虚拟IP地址，使用dynamic发现")
             
@@ -560,13 +536,11 @@ class SyncthingManager:
             logger.info(f"添加新设备: {device_name or device_id[:7]} ({device_id[:7]}...) 地址: {addresses}")
             
             # 输出详细诊断信息
-            logger.info(f"🔍 设备配置详情:")
+            logger.info(f"✅ 设备配置详情:")
             logger.info(f"   设备ID: {device_id}")
             logger.info(f"   设备名称: {device_name or device_id[:7]}")
             logger.info(f"   虚拟IP: {device_address or 'N/A'}")
             logger.info(f"   连接地址: {addresses}")
-            if device_address:
-                logger.info(f"   ⚠️ 将通过SOCKS5代理({Config.EASYTIER_SOCKS5_PORT})连接到 {device_address}:22000")
             
             return self.set_config(config, async_mode=async_mode)
     

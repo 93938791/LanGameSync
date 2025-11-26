@@ -1,24 +1,22 @@
 """
 TCP广播通信管理器
-用于客户端间消息广播（支持SOCKS5代理）
+用于客户端间消息广播
 """
 import json
 import socket
 import threading
-import socks
 from utils.logger import Logger
 
 logger = Logger().get_logger("TCPBroadcast")
 
 
 class TCPBroadcast:
-    """TCP广播消息管理器（通过SOCKS5代理）"""
+    """TCP广播消息管理器"""
     
-    def __init__(self, easytier_manager=None, socks5_port=1080):
+    def __init__(self, easytier_manager=None):
         self.server_sock = None  # TCP服务器socket
         self.connected = False
         self.broadcast_port = 9999
-        self.socks5_port = socks5_port  # SOCKS5代理端口
         self.callbacks = []  # 消息回调列表
         self.listen_thread = None
         self.running = False
@@ -70,7 +68,7 @@ class TCPBroadcast:
     
     def publish(self, message_type, data):
         """
-        广播消息（使用TCP+SOCKS5代理）
+        广播消息（使用TCP直连）
         
         Args:
             message_type: 消息类型 (game_starting, server_ready, etc.)
@@ -104,16 +102,15 @@ class TCPBroadcast:
                         pass
                 return False
             
-            # 向每个对等节点发送TCP消息（通过SOCKS5代理）
+            # 向每个对等节点发送TCP消息（直接连接）
             success_count = 0
             for peer_ip in peer_ips:
                 try:
-                    # 创建支持SOCKS5的socket
-                    sock = socks.socksocket(socket.AF_INET, socket.SOCK_STREAM)
-                    sock.set_proxy(socks.SOCKS5, "127.0.0.1", self.socks5_port)
+                    # 创建普通的TCP socket
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     sock.settimeout(3)  # 3秒超时
                     
-                    # 连接到对等节点
+                    # 直接连接到对等节点
                     sock.connect((peer_ip, self.broadcast_port))
                     
                     # 发送消息
@@ -127,7 +124,7 @@ class TCPBroadcast:
                     logger.warning(f"发送到 {peer_ip} 失败: {e}")
             
             if success_count > 0:
-                logger.info(f"TCP广播(SOCKS5): {message_type} -> {success_count}/{len(peer_ips)}个节点")
+                logger.info(f"TCP广播: {message_type} -> {success_count}/{len(peer_ips)}个节点")
             
             # 触发UI更新（发送消息）
             for callback in self.callbacks:

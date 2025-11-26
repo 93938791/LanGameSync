@@ -51,8 +51,6 @@ class EasytierManager:
             peers_to_use = custom_peers
         
         args = [
-            "--no-tun",
-            "--socks5", "1080",
             "--rpc-portal", "127.0.0.1:15888",  # 显式指定 RPC 端口，供 easytier-cli 连接
             "-d",
             "--network-name", net_name,
@@ -74,11 +72,13 @@ class EasytierManager:
         else:
             logger.info("启动Easytier虚拟网络（不使用节点，局域网模式）...")
         
-        # 启动进程
+        # 启动进程（TUN模式需要管理员权限）
+        logger.info("ℹ️ TUN模式需要管理员权限来创建虚拟网卡...")
         self.process = ProcessHelper.start_process(
             Config.EASYTIER_BIN,
             args=args,
-            hide_window=True
+            hide_window=True,
+            require_admin=True  # TUN模式需要管理员权限
         )
         
         # 等待虚拟网络初始化并分配IP

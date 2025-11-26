@@ -54,6 +54,197 @@ class GameLauncher:
         self.game_hwnd = None
         self.lan_port = None
         
+    def join_server(self, server_ip, server_port, player_name=None, launcher_path=None):
+        """
+        加入服务器（专用于加入游戏）
+        
+        Args:
+            server_ip: 服务器IP
+            server_port: 服务器端口
+            player_name: 玩家名称
+            launcher_path: 启动器路径
+            
+        Returns:
+            bool: 是否成功启动
+        """
+        try:
+            if not self.minecraft_dir or not self.version:
+                logger.error("未设置 Minecraft 目录或版本")
+                return False
+            
+            # 从启动器读取账号信息
+            use_offline = True
+            mojang_uuid = None
+            mojang_token = None
+            account_type = 'offline'
+            
+            if launcher_path:
+                logger.info(f"尝试从启动器读取账号信息: {launcher_path}")
+                account_info = self._read_launcher_account(launcher_path)
+                
+                if account_info:
+                    if player_name is None:
+                        player_name = account_info.get('player_name', 'Player')
+                    mojang_uuid = account_info.get('uuid')
+                    mojang_token = account_info.get('access_token')
+                    account_type = account_info.get('account_type', 'offline')
+                    use_offline = (account_type == 'offline')
+                    logger.info(f"从启动器读取到账号: {player_name} (类型: {account_type})")
+            
+            if player_name is None:
+                player_name = 'Player'
+            
+            # 读取版本 JSON
+            version_json = self._read_version_json()
+            if not version_json:
+                return False
+            
+            # 构建加入服务器的命令
+            cmd = self._build_join_server_command(version_json, player_name, use_offline, mojang_uuid, mojang_token, account_type, server_ip, server_port)
+            if not cmd:
+                return False
+            
+            logger.info(f"游戏目录: {self.game_dir}")
+            logger.info(f"主类: {version_json.get('mainClass')}")
+            logger.info(f"加入服务器: {server_ip}:{server_port}")
+            logger.info(f"===== 完整启动命令 =====")
+            logger.info(f"{' '.join(cmd)}")
+            logger.info(f"=======================")
+            
+            # 创建游戏日志文件
+            game_log_dir = self.game_dir / 'logs'
+            game_log_dir.mkdir(parents=True, exist_ok=True)
+            game_output_log = game_log_dir / 'game_output.log'
+            
+            # 启动进程
+            startupinfo = None
+            if os.name == 'nt':
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+            
+            with open(game_output_log, 'w', encoding='utf-8') as log_file:
+                self.game_process = subprocess.Popen(
+                    cmd,
+                    cwd=str(self.game_dir),
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                    startupinfo=startupinfo,
+                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+                )
+            
+            logger.info(f"游戏进程已启动，PID: {self.game_process.pid}")
+            logger.info(f"游戏输出日志: {game_output_log}")
+            
+            # 检查进程是否立即退出
+            time.sleep(2)
+            if self.game_process.poll() is not None:
+                logger.error(f"游戏进程立即退出，退出码: {self.game_process.returncode}")
+                logger.error("请检查游戏日志文件获取详细错误信息")
+                return False
+            
+            logger.info("游戏进程正常运行")
+            return True
+            
+        except Exception as e:
+            logger.error(f"加入服务器失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False
+    
+    def _build_join_server_command(self, version_data, player_name, use_offline, mojang_uuid, mojang_token, account_type, server_ip, server_port):
+        """构建加入服务器的命令"""
+        try:
+            # 1. 获取库文件
+            libraries = self._get_libraries(version_data)
+            if not libraries:
+                logger.error("没有找到库文件")
+                return None
+            
+            # 2. 构建 classpath
+            classpath = ';'.join(libraries)
+            
+            # 3. 获取主类
+            main_class = version_data.get('mainClass', 'net.minecraft.client.main.Main')
+            
+            # 4. 获取游戏参数
+            game_args = self._get_game_arguments(version_data)
+            game_args = [self._replace_variables(arg, player_name, use_offline, mojang_uuid, mojang_token, version_data, account_type) for arg in game_args]
+            
+            # 5. 找到 natives 目录
+            natives_dir = self.version_dir / "natives-windows-x86_64"
+            if not natives_dir.exists():
+                for possible_name in ["natives", f"{self.version}-natives"]:
+                    possible_dir = self.version_dir / possible_name
+                    if possible_dir.exists():
+                        natives_dir = possible_dir
+                        break
+            
+            logger.info(f"Native 库目录: {natives_dir}")
+            
+            # 6. 构建完整命令
+            cmd = [
+                'java',
+                '-Xmx2G',
+                '-Xms512M',
+                '-XX:+UnlockExperimentalVMOptions',
+                '-XX:+UseG1GC',
+                '-XX:G1NewSizePercent=20',
+                '-XX:G1ReservePercent=20',
+                '-XX:MaxGCPauseMillis=50',
+                '-XX:G1HeapRegionSize=32M',
+                f'-Djava.library.path={natives_dir}',
+                f'-Djna.tmpdir={natives_dir}',
+                f'-Dorg.lwjgl.system.SharedLibraryExtractPath={natives_dir}',
+                f'-Dio.netty.native.workdir={natives_dir}',
+                '-Dminecraft.launcher.brand=java-minecraft-launcher',
+                '-Dminecraft.launcher.version=1.6.91',
+                '-cp',
+                classpath,
+                main_class,
+            ]
+            cmd.extend(game_args)
+            
+            # 7. 添加服务器连接参数（1.20+ 版本使用 quickPlayMultiplayer）
+            version_parts = self.version.split('.')
+            try:
+                major_version = int(version_parts[1]) if len(version_parts) > 1 else 0
+                
+                if major_version >= 20:
+                    # 1.20+ 版本使用 --quickPlayMultiplayer
+                    cmd.append('--quickPlayMultiplayer')
+                    cmd.append(f"{server_ip}:{server_port}")
+                    logger.info(f"添加服务器连接参数: --quickPlayMultiplayer {server_ip}:{server_port}")
+                else:
+                    # 旧版本使用 --server 和 --port
+                    cmd.append('--server')
+                    cmd.append(server_ip)
+                    cmd.append('--port')
+                    cmd.append(str(server_port))
+                    logger.info(f"添加服务器连接参数: --server {server_ip} --port {server_port}")
+            except (ValueError, IndexError):
+                # 解析版本号失败，使用默认方式
+                cmd.append('--server')
+                cmd.append(server_ip)
+                cmd.append('--port')
+                cmd.append(str(server_port))
+                logger.warning(f"无法解析版本号: {self.version}，使用 --server/--port 参数")
+            
+            # 8. 添加窗口化参数（去掉全屏）
+            cmd.append('--width')
+            cmd.append('1280')
+            cmd.append('--height')
+            cmd.append('720')
+            logger.info(f"添加服务器连接参数: --server {server_ip} --port {server_port} （窗口模式 1280x720）")
+            
+            return cmd
+            
+        except Exception as e:
+            logger.error(f"构建加入服务器命令失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return None
+    
     def launch_minecraft(self, player_name=None, use_offline=None, mojang_uuid=None, mojang_token=None, launcher_path=None, world_name=None, server_ip=None, server_port=None):
         """
         直接启动Minecraft（不依赖启动器）

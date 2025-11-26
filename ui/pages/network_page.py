@@ -37,7 +37,7 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
         self.traffic_timer = QTimer()
         self.traffic_timer.timeout.connect(self.update_traffic_stats)
         
-        # 设备列表刷新定时器（每5秒刷新一次）
+        # 设备列表刷新定时器（增加间隔到10秒，减少CPU占用）
         self.device_refresh_timer = QTimer()
         self.device_refresh_timer.timeout.connect(self.update_clients_list)
         
@@ -427,8 +427,12 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
         return device
     
     def _setup_scroll_animation(self, label, text):
-        """设置文本滚动动画"""
-        # 创建定时器实现滚动效果
+        """设置文本滚动动画（优化版）"""
+        # 只有在需要时才创建定时器，减少性能开销
+        if len(text) <= 8:
+            return
+        
+        # 创建定时器实现滚动效果（加大间隔减少CPU占用）
         timer = QTimer(label)
         scroll_pos = [0]  # 使用列表以便在闭包中修改
         
@@ -439,7 +443,7 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
             label.setText(scrolled_text)
         
         timer.timeout.connect(scroll_text)
-        timer.start(300)  # 每300ms滚动一次
+        timer.start(500)  # 从300ms增加到50 0ms，减少更新频率
         label.scroll_timer = timer  # 保存引用防止被回收
     
     def show_peer_manager(self):
@@ -511,7 +515,7 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
             self.parent_window.tcp_broadcast = TCPBroadcast(easytier_manager=self.parent_window.controller.easytier)
             self.parent_window.tcp_broadcast.connect(broker_port=9999)
             self.parent_window.tcp_broadcast.register_callback(self.parent_window.on_tcp_message)
-            logger.info("TCP广播已启动（使用SOCKS5代理）")
+            logger.info("TCP广播已启动")
             
             # 广播设备上线消息
             self.parent_window.tcp_broadcast.publish("device/online", {
@@ -539,8 +543,8 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
             self.traffic_timer.start(2000)
             logger.info("流量统计定时器已启动")
             
-            # 启动设备列表刷新定时器（每5秒刷新一次）
-            self.device_refresh_timer.start(5000)
+            # 启动设备列表刷新定时器（从5秒增加到10秒，减少频繁调用）
+            self.device_refresh_timer.start(10000)
             logger.info("设备列表刷新定时器已启动")
             
             # 不再启动持续轮询线程，改为连接时发现一次
@@ -619,13 +623,13 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
             logger.error(f"断开连接失败: {e}")
     
     def update_clients_list(self):
-        """更新客户端列表（显示在设备卡片中）"""
+        """更新客户端列表（显示在设备卡片中）——优化版"""
         if not self.parent_window.is_connected:
             return
         
         try:
-            # 获取对等设备列表
-            peers = self.parent_window.controller.easytier.discover_peers(timeout=3)
+            # 获取对等设备列表（减少timeout到1秒，减少阻塞时间）
+            peers = self.parent_window.controller.easytier.discover_peers(timeout=1)
             
             # 如果获取失败或为空，保留当前显示（避免闪烁）
             if not peers:
@@ -724,24 +728,14 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
         try:
             import requests
             
-            proxies = {
-                'http': f'socks5h://127.0.0.1:{Config.EASYTIER_SOCKS5_PORT}',
-                'https': f'socks5h://127.0.0.1:{Config.EASYTIER_SOCKS5_PORT}'
-            }
-            
             url = f"http://{peer_ip}:{Config.SYNCTHING_API_PORT}/rest/system/status"
             headers = {"X-API-Key": Config.SYNCTHING_API_KEY}
             
-            logger.info(f"尝试通过SOCKS5访问: {url}")
-            resp = requests.get(url, headers=headers, proxies=proxies, timeout=5)
+            resp = requests.get(url, headers=headers, timeout=5)
             resp.raise_for_status()
             
             device_id = resp.json()["myID"]
-            logger.info(f"✅ 成功从 {peer_ip} 获取到设备ID: {device_id[:7]}...")
             return device_id
-        except requests.exceptions.ProxyError as e:
-            logger.warning(f"❌ SOCKS5代理连接失败（{peer_ip}）: {e}")
-            return None
         except requests.exceptions.Timeout:
             logger.warning(f"❌ 连接到 {peer_ip} 超时（可能对方Syncthing还未启动）")
             return None

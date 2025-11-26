@@ -162,7 +162,7 @@ class SyncController:
     
     def _get_remote_device_id(self, peer_ip, timeout=5):
         """
-        从远程设备获取Syncthing设备ID（通过SOCKS5代理，无TUN模式）
+        从远程设备获取Syncthing设备ID
         
         Args:
             peer_ip: 对等设备的虚拟IP
@@ -172,27 +172,17 @@ class SyncController:
             str: 设备ID，失败返回None
         """
         try:
-            # 无TUN模式下，直接通过SOCKS5代理访问（不使用ping）
-            # 设置代理（用于无TUN模式下主动访问）
-            proxies = {
-                'http': 'socks5://127.0.0.1:1080',
-                'https': 'socks5://127.0.0.1:1080'
-            }
-            
             url = f"http://{peer_ip}:{Config.SYNCTHING_API_PORT}/rest/system/status"
             headers = {"X-API-Key": Config.SYNCTHING_API_KEY}
             
-            logger.info(f"通过SOCKS5代理访问: {url}")
-            resp = requests.get(url, headers=headers, proxies=proxies, timeout=timeout)
+            logger.info(f"直接访问: {url}")
+            resp = requests.get(url, headers=headers, timeout=timeout)
             resp.raise_for_status()
             
             device_id = resp.json()["myID"]
             logger.info(f"从 {peer_ip} 获取到设备ID: {device_id[:7]}...")
             return device_id
             
-        except requests.exceptions.ProxyError as e:
-            logger.warning(f"SOCKS5代理连接失败（{peer_ip}）: {e}")
-            return None
         except requests.exceptions.Timeout:
             logger.warning(f"连接到 {peer_ip} 超时")
             return None

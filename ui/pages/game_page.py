@@ -1691,13 +1691,13 @@ class GameInterface(QWidget):
                     # 创建游戏启动器
                     game_launcher = GameLauncher(minecraft_dir, version)
                     
-                    # 启动游戏并自动连接服务器
-                    logger.info("调用 launch_minecraft...")
-                    success = game_launcher.launch_minecraft(
-                        launcher_path=launcher_path,
-                        player_name=player_name,
+                    # 使用专用的 join_server 方法
+                    logger.info("调用 join_server...")
+                    success = game_launcher.join_server(
                         server_ip=self.game_host,
-                        server_port=self.game_port
+                        server_port=self.game_port,
+                        player_name=player_name,
+                        launcher_path=launcher_path
                     )
                     
                     logger.info(f"launch_minecraft 返回: {success}")

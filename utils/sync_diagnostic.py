@@ -40,21 +40,6 @@ class SyncDiagnostic:
             return False
     
     @staticmethod
-    def check_easytier_socks5():
-        """检查 EasyTier SOCKS5 代理是否可用"""
-        try:
-            proxies = {
-                'http': f'socks5://127.0.0.1:{Config.EASYTIER_SOCKS5_PORT}',
-                'https': f'socks5://127.0.0.1:{Config.EASYTIER_SOCKS5_PORT}'
-            }
-            # 尝试通过代理访问一个简单的地址
-            resp = requests.get('http://www.baidu.com', proxies=proxies, timeout=5)
-            return resp.status_code == 200
-        except Exception as e:
-            logger.error(f"SOCKS5 代理不可用: {e}")
-            return False
-    
-    @staticmethod
     def check_folder_writable(folder_path):
         """检查文件夹是否可写"""
         try:
@@ -104,17 +89,13 @@ class SyncDiagnostic:
         logger.info("检查 Syncthing 同步端口 22000...")
         results['syncthing_port'] = SyncDiagnostic.check_port_accessibility(22000)
         
-        # 3. 检查 EasyTier SOCKS5
-        logger.info("检查 EasyTier SOCKS5 代理...")
-        results['easytier_socks5'] = SyncDiagnostic.check_easytier_socks5()
-        
-        # 4. 检查虚拟 IP
+        # 3. 检查虚拟 IP
         if easytier_manager:
             logger.info("检查虚拟 IP...")
             results['virtual_ip'] = easytier_manager.virtual_ip not in [None, "unknown", "waiting..."]
             results['virtual_ip_value'] = easytier_manager.virtual_ip
         
-        # 5. 检查设备连接
+        # 4. 检查设备连接
         if syncthing_manager:
             logger.info("检查设备连接...")
             connections = syncthing_manager.get_connections()
@@ -124,7 +105,7 @@ class SyncDiagnostic:
             else:
                 results['connected_devices'] = 0
         
-        # 6. 检查文件夹可写性和磁盘空间
+        # 5. 检查文件夹可写性和磁盘空间
         if folder_path:
             logger.info(f"检查文件夹: {folder_path}")
             writable, msg = SyncDiagnostic.check_folder_writable(folder_path)
@@ -158,9 +139,6 @@ class SyncDiagnostic:
         
         if not results.get('syncthing_port'):
             recommendations.append("⚠️ Syncthing 同步端口 22000 不可访问，可能被防火墙阻止")
-        
-        if not results.get('easytier_socks5'):
-            recommendations.append("⚠️ EasyTier SOCKS5 代理不可用，请检查 EasyTier 是否正常运行")
         
         if not results.get('virtual_ip'):
             recommendations.append("⚠️ 虚拟 IP 未分配，请等待 EasyTier 完成组网")

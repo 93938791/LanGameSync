@@ -19,7 +19,7 @@ class ProcessHelper:
     """进程管理辅助类"""
     
     @staticmethod
-    def start_process(exe_path, args=None, env=None, hide_window=True):
+    def start_process(exe_path, args=None, env=None, hide_window=True, require_admin=False):
         """
         启动进程
         
@@ -28,6 +28,7 @@ class ProcessHelper:
             args: 命令行参数列表
             env: 环境变量字典
             hide_window: 是否隐藏窗口
+            require_admin: 是否需要管理员权限（仅Windows）
         
         Returns:
             subprocess.Popen对象
@@ -36,23 +37,107 @@ class ProcessHelper:
         if args:
             cmd.extend(args)
         
-        startup_info = None
-        if hide_window:
-            startup_info = subprocess.STARTUPINFO()
-            startup_info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startup_info.wShowWindow = subprocess.SW_HIDE
+        # Windows平台特殊处理
+        if sys.platform == 'win32':
+            # 如果需要管理员权限，使用ShellExecute启动
+            if require_admin:
+                import ctypes
+                logger.info(f"以管理员权限启动进程: {' '.join(cmd)}")
+                
+                # 准备参数
+                params = ' '.join([f'"{arg}"' if ' ' in str(arg) else str(arg) for arg in args]) if args else ''
+                
+                # 使用ShellExecute以管理员身份启动，不显示窗口
+                ret = ctypes.windll.shell32.ShellExecuteW(
+                    None,
+                    "runas",  # 以管理员身份运行
+                    str(exe_path),
+                    params,
+                    None,
+                    0  # SW_HIDE - 隐藏窗口
+                )
+                
+                if ret <= 32:
+                    raise RuntimeError(f"启动进程失败，错误代码: {ret}")
+                
+                # ShellExecute无法返回Popen对象，需要找到启动的进程
+                import time
+                time.sleep(1)  # 等待进程启动
+                
+                # 尝试通过进程名找到刚启动的进程
+                import psutil
+                exe_name = str(exe_path).split('\\')[-1]
+                for proc in psutil.process_iter(['pid', 'name', 'create_time']):
+                    try:
+                        if proc.info['name'] == exe_name:
+                            # 找到最近创建的进程
+                            if time.time() - proc.info['create_time'] < 5:
+                                # 创建伪Popen对象用于管理
+                                class PseudoPopen:
+                                    def __init__(self, pid):
+                                        self.pid = pid
+                                        self._proc = psutil.Process(pid)
+                                    
+                                    def poll(self):
+                                        try:
+                                            return None if self._proc.is_running() else 0
+                                        except:
+                                            return 0
+                                    
+                                    def terminate(self):
+                                        try:
+                                            self._proc.terminate()
+                                        except:
+                                            pass
+                                    
+                                    def kill(self):
+                                        try:
+                                            self._proc.kill()
+                                        except:
+                                            pass
+                                    
+                                    def wait(self, timeout=None):
+                                        try:
+                                            self._proc.wait(timeout=timeout)
+                                        except:
+                                            pass
+                                
+                                logger.info(f"找到启动的进程 PID: {proc.info['pid']}")
+                                return PseudoPopen(proc.info['pid'])
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+                
+                logger.warning("无法找到启动的进程，返回空对象")
+                return None
+            
+            # 常规启动（非管理员）
+            startup_info = None
+            if hide_window:
+                startup_info = subprocess.STARTUPINFO()
+                startup_info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startup_info.wShowWindow = subprocess.SW_HIDE
+            
+            logger.info(f"启动进程: {' '.join(cmd)}")
+            
+            process = subprocess.Popen(
+                cmd,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                startupinfo=startup_info,
+                creationflags=CREATE_NO_WINDOW if hide_window else 0
+            )
+            
+            return process
         
+        # 非Windows平台
         logger.info(f"启动进程: {' '.join(cmd)}")
-        
         process = subprocess.Popen(
             cmd,
             env=env,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            startupinfo=startup_info,
-            creationflags=CREATE_NO_WINDOW if hide_window else 0
+            stderr=subprocess.PIPE
         )
-        
         return process
     
     @staticmethod
