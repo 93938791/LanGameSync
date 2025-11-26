@@ -244,6 +244,41 @@ class SyncthingManager:
             logger.error(f"配置监听地址失败: {e}")
             return False
     
+    def _restart_device_connection(self, device_id):
+        """触发Syncthing重新连接指定设备"""
+        try:
+            # 通过设置设备为暂停再恢复来触发重连
+            logger.info(f"触发设备重连: {device_id[:7]}...")
+            
+            # 获取配置
+            config = self.get_config()
+            if not config:
+                return False
+            
+            # 找到设备
+            for device in config.get('devices', []):
+                if device['deviceID'] == device_id:
+                    # 先暂停
+                    device['paused'] = True
+                    self.set_config(config, async_mode=False)
+                    
+                    # 等待一下
+                    import time
+                    time.sleep(1)
+                    
+                    # 再恢复
+                    device['paused'] = False
+                    self.set_config(config, async_mode=False)
+                    
+                    logger.info(f"✅ 已触发设备 {device_id[:7]}... 重连")
+                    return True
+            
+            logger.warning(f"未找到设备: {device_id}")
+            return False
+        except Exception as e:
+            logger.error(f"触发设备重连失败: {e}")
+            return False
+    
     def api_request(self, endpoint, method="GET", data=None):
         """通用API请求方法"""
         try:
@@ -344,7 +379,11 @@ class SyncthingManager:
                         logger.info(f"为已存在设备创建SOCKS5转发: {tcp_address} → {device_address}:22000")
                         
                         # 保存配置
-                        return self.set_config(config, async_mode=async_mode)
+                        result = self.set_config(config, async_mode=False)
+                        if result:
+                            # 触发Syncthing重新连接该设备
+                            self._restart_device_connection(device_id)
+                        return result
                     else:
                         logger.warning(f"启动端口转发失败（设备已存在）")
                 

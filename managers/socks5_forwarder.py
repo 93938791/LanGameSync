@@ -111,6 +111,8 @@ class SOCKS5Forwarder:
         """处理单个连接的转发"""
         remote_socket = None
         try:
+            logger.info(f"🔁 收到Syncthing连接请求，正在通过SOCKS5连接到 {remote_ip}:{remote_port}...")
+            
             # 创建 SOCKS5 socket
             remote_socket = socks.socksocket()
             remote_socket.set_proxy(
@@ -121,12 +123,13 @@ class SOCKS5Forwarder:
             
             # 通过 SOCKS5 连接到远程地址
             remote_socket.connect((remote_ip, remote_port))
+            logger.info(f"✅ SOCKS5连接成功: {remote_ip}:{remote_port}")
             
             # 双向转发数据
             self._pipe_sockets(client_socket, remote_socket)
             
         except Exception as e:
-            logger.debug(f"连接处理失败 ({remote_ip}:{remote_port}): {e}")
+            logger.warning(f"❌ 连接处理失败 ({remote_ip}:{remote_port}): {e}")
         finally:
             try:
                 client_socket.close()
