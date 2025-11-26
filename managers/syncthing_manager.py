@@ -321,12 +321,24 @@ class SyncthingManager:
             
             # 关键修复：每次读取配置时自动过滤本机ID
             # 防止 Syncthing 自动添加本机到设备列表
-            if config and 'devices' in config and self.device_id:
-                original_count = len(config['devices'])
-                config['devices'] = [dev for dev in config['devices'] if dev.get('deviceID') != self.device_id]
-                removed = original_count - len(config['devices'])
-                if removed > 0:
-                    logger.debug(f"⚠️ get_config中过滤了 {removed} 个本机ID")
+            if config and self.device_id:
+                # 1. 过滤设备列表中的本机ID
+                if 'devices' in config:
+                    original_count = len(config['devices'])
+                    config['devices'] = [dev for dev in config['devices'] if dev.get('deviceID') != self.device_id]
+                    removed = original_count - len(config['devices'])
+                    if removed > 0:
+                        logger.debug(f"⚠️ get_config中过滤了设备列表中的 {removed} 个本机ID")
+                
+                # 2. 过滤文件夹设备列表中的本机ID（关键！）
+                if 'folders' in config:
+                    for folder in config['folders']:
+                        if 'devices' in folder:
+                            original_count = len(folder['devices'])
+                            folder['devices'] = [dev for dev in folder['devices'] if dev.get('deviceID') != self.device_id]
+                            removed = original_count - len(folder['devices'])
+                            if removed > 0:
+                                logger.debug(f"⚠️ 从文件夹 {folder.get('id')} 中过滤了 {removed} 个本机ID")
             
             return config
         except Exception as e:
@@ -343,12 +355,24 @@ class SyncthingManager:
         def _do_set_config():
             try:
                 # 关键修复：每次保存配置前都清理本机ID（防止被重新添加）
-                if config and 'devices' in config:
-                    original_count = len(config['devices'])
-                    config['devices'] = [dev for dev in config['devices'] if dev.get('deviceID') != self.device_id]
-                    removed = original_count - len(config['devices'])
-                    if removed > 0:
-                        logger.warning(f"⚠️ set_config检测到并清理了 {removed} 个本机ID（不应该发生）")
+                if config and self.device_id:
+                    # 1. 清理设备列表
+                    if 'devices' in config:
+                        original_count = len(config['devices'])
+                        config['devices'] = [dev for dev in config['devices'] if dev.get('deviceID') != self.device_id]
+                        removed = original_count - len(config['devices'])
+                        if removed > 0:
+                            logger.warning(f"⚠️ set_config检测到设备列表中有 {removed} 个本机ID（已清理）")
+                    
+                    # 2. 清理文件夹设备列表
+                    if 'folders' in config:
+                        for folder in config['folders']:
+                            if 'devices' in folder:
+                                original_count = len(folder['devices'])
+                                folder['devices'] = [dev for dev in folder['devices'] if dev.get('deviceID') != self.device_id]
+                                removed = original_count - len(folder['devices'])
+                                if removed > 0:
+                                    logger.warning(f"⚠️ set_config检测到文件夹 {folder.get('id')} 中有 {removed} 个本机ID（已清理）")
                 
                 resp = requests.put(
                     f"{self.api_url}/rest/config",
