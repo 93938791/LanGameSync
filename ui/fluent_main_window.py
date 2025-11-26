@@ -41,7 +41,7 @@ class FluentMainWindow(FluentWindow):
         self.is_connected = False
         
         # MQTT和游戏启动器
-        self.udp_broadcast = None
+        self.tcp_broadcast = None
         self.game_launcher = None
         self.server_info = None
         
@@ -144,9 +144,9 @@ Syncthing事件回调(收到同步事件时自动调用)
         except Exception as e:
             logger.debug(f"Syncthing事件处理失败: {e}")
     
-    def on_udp_message(self, message_type, data, source_ip="", is_send=False):
+    def on_tcp_message(self, message_type, data, source_ip="", is_send=False):
         """
-        UDP消息回调
+        TCP消息回调
         
         Args:
             message_type: 消息类型
@@ -228,15 +228,15 @@ Syncthing事件回调(收到同步事件时自动调用)
                 try:
                     logger.info("开始异步清理资源...")
                     
-                    # 1. 断开UDP广播
-                    if hasattr(self, 'udp_broadcast') and self.udp_broadcast:
+                    # 1. 断开TCP广播
+                    if hasattr(self, 'tcp_broadcast') and self.tcp_broadcast:
                         try:
-                            logger.info("正在关闭UDP广播...")
-                            self.udp_broadcast.disconnect()
-                            self.udp_broadcast = None
-                            logger.info("UDP广播已关闭")
+                            logger.info("正在关闭TCP广播...")
+                            self.tcp_broadcast.disconnect()
+                            self.tcp_broadcast = None
+                            logger.info("TCP广播已关闭")
                         except Exception as e:
-                            logger.error(f"关闭UDP广播失败: {e}")
+                            logger.error(f"关闭TCP广播失败: {e}")
                     
                     # 2. 停止Syncthing（最耗时的操作）
                     if hasattr(self, 'syncthing_manager') and self.syncthing_manager:

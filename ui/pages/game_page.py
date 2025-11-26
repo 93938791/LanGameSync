@@ -817,10 +817,10 @@ class GameInterface(QWidget):
                 logger.info(f"自动进入世界: {world_name}")
             
             # 广播游戏启动中（禁用其他人的启动按钮）
-            logger.info("检查UDP广播对象...")
-            if hasattr(self.parent_window, 'udp_broadcast') and self.parent_window.udp_broadcast:
-                logger.info("udp_broadcast 存在，开始广播 game/starting")
-                self.parent_window.udp_broadcast.publish(
+            logger.info("检查TCP广播对象...")
+            if hasattr(self.parent_window, 'tcp_broadcast') and self.parent_window.tcp_broadcast:
+                logger.info("tcp_broadcast 存在，开始广播 game/starting")
+                self.parent_window.tcp_broadcast.publish(
                     "game/starting",
                     {
                         "game_name": game_name,
@@ -829,7 +829,7 @@ class GameInterface(QWidget):
                     }
                 )
             else:
-                logger.warning("udp_broadcast 不存在！")
+                logger.warning("tcp_broadcast 不存在！")
             
             # 设置为主机状态（防止自己的按钮被禁用）
             self.is_host = True
@@ -885,8 +885,8 @@ class GameInterface(QWidget):
                                 self._start_process_monitor(game_name, world_name, player_name)
                                 
                                 # 广播游戏启动成功（其他人按钮变为"加入游戏"）
-                                logger.info("检查UDP广播对象...")
-                                if hasattr(self.parent_window, 'udp_broadcast') and self.parent_window.udp_broadcast:
+                                logger.info("检查TCP广播对象...")
+                                if hasattr(self.parent_window, 'tcp_broadcast') and self.parent_window.tcp_broadcast:
                                     # 获取本机EasyTier虚拟IP
                                     virtual_ip = ""
                                     if hasattr(self.parent_window, 'controller') and hasattr(self.parent_window.controller, 'easytier'):
@@ -895,8 +895,8 @@ class GameInterface(QWidget):
                                     if not virtual_ip:
                                         logger.warning("未获取到EasyTier虚拟IP，其他玩家可能无法加入")
                                     
-                                    logger.info(f"udp_broadcast 存在，开始广播 game/started (host_ip={virtual_ip}, port={lan_port})")
-                                    self.parent_window.udp_broadcast.publish(
+                                    logger.info(f"tcp_broadcast 存在，开始广播 game/started (host_ip={virtual_ip}, port={lan_port})")
+                                    self.parent_window.tcp_broadcast.publish(
                                         "game/started",
                                         {
                                             "game_name": game_name,
@@ -907,7 +907,7 @@ class GameInterface(QWidget):
                                         }
                                     )
                                 else:
-                                    logger.warning("udp_broadcast 不存在！")
+                                    logger.warning("tcp_broadcast 不存在！")
                                 
                                 # 启动定时广播（每10秒广播一次，让新加入的玩家知道服务器在运行）
                                 self._start_host_broadcast(game_name, world_name, player_name, lan_port)
@@ -983,8 +983,8 @@ class GameInterface(QWidget):
                     QTimer.singleShot(0, lambda: self._stop_host_broadcast())
                     
                     # 广播游戏启动失败（恢复所有人的启动按钮）
-                    if hasattr(self.parent_window, 'udp_broadcast') and self.parent_window.udp_broadcast:
-                        self.parent_window.udp_broadcast.publish(
+                    if hasattr(self.parent_window, 'tcp_broadcast') and self.parent_window.tcp_broadcast:
+                        self.parent_window.tcp_broadcast.publish(
                             "game/failed",
                             {
                                 "game_name": game_name,
@@ -1781,8 +1781,8 @@ class GameInterface(QWidget):
                 QTimer.singleShot(0, lambda: self._stop_host_broadcast())
                 
                 # 广播主机掉线消息
-                if hasattr(self.parent_window, 'udp_broadcast') and self.parent_window.udp_broadcast:
-                    self.parent_window.udp_broadcast.publish(
+                if hasattr(self.parent_window, 'tcp_broadcast') and self.parent_window.tcp_broadcast:
+                    self.parent_window.tcp_broadcast.publish(
                         "game/host_offline",
                         {
                             "game_name": game_name,
@@ -1835,13 +1835,13 @@ class GameInterface(QWidget):
                     self._stop_host_broadcast()
                     return
                 
-                if hasattr(self.parent_window, 'udp_broadcast') and self.parent_window.udp_broadcast:
+                if hasattr(self.parent_window, 'tcp_broadcast') and self.parent_window.tcp_broadcast:
                     # 获取本机EasyTier虚拟IP
                     virtual_ip = ""
                     if hasattr(self.parent_window, 'controller') and hasattr(self.parent_window.controller, 'easytier'):
                         virtual_ip = self.parent_window.controller.easytier.virtual_ip or ''
                     
-                    self.parent_window.udp_broadcast.publish(
+                    self.parent_window.tcp_broadcast.publish(
                         "game/started",
                         {
                             "game_name": game_name,

@@ -506,15 +506,15 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
             self.parent_window.syncthing_manager.register_event_callback(self.parent_window.on_syncthing_event)
             logger.info("已注册Syncthing事件监听")
             
-            # 初始化UDP广播（传入EasyTier管理器引用）
-            from managers.udp_broadcast import UDPBroadcast
-            self.parent_window.udp_broadcast = UDPBroadcast(easytier_manager=self.parent_window.controller.easytier)
-            self.parent_window.udp_broadcast.connect(broker_port=9999)
-            self.parent_window.udp_broadcast.register_callback(self.parent_window.on_udp_message)
-            logger.info("UDP广播已启动（使用EasyTier网络）")
+            # 初始化TCP广播（传入EasyTier管理器引用）
+            from managers.tcp_broadcast import TCPBroadcast
+            self.parent_window.tcp_broadcast = TCPBroadcast(easytier_manager=self.parent_window.controller.easytier)
+            self.parent_window.tcp_broadcast.connect(broker_port=9999)
+            self.parent_window.tcp_broadcast.register_callback(self.parent_window.on_tcp_message)
+            logger.info("TCP广播已启动（使用SOCKS5代理）")
             
             # 广播设备上线消息
-            self.parent_window.udp_broadcast.publish("device/online", {
+            self.parent_window.tcp_broadcast.publish("device/online", {
                 "device_id": self.parent_window.syncthing_manager.device_id,
                 "virtual_ip": message,
                 "hostname": Config.HOSTNAME
