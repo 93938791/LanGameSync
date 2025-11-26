@@ -312,8 +312,12 @@ class SyncthingManager:
             logger.debug(f"API请求失败 {endpoint}: {e}")
             return None
     
-    def get_config(self):
-        """获取完整配置（自动过滤本机ID）"""
+    def get_config(self, filter_self=True):
+        """获取完整配置
+        
+        Args:
+            filter_self: 是否过滤本机ID（默认True）
+        """
         try:
             resp = requests.get(f"{self.api_url}/rest/config", headers=self.headers, timeout=5)
             resp.raise_for_status()
@@ -321,7 +325,7 @@ class SyncthingManager:
             
             # 关键修复：每次读取配置时自动过滤本机ID
             # 防止 Syncthing 自动添加本机到设备列表
-            if config and self.device_id:
+            if config and self.device_id and filter_self:
                 # 1. 过滤设备列表中的本机ID
                 if 'devices' in config:
                     original_count = len(config['devices'])
@@ -834,6 +838,11 @@ class SyncthingManager:
             logger.info(f"   总计: {len(connections.get('connections', {}))} 个设备")
             
             for device_id, conn in connections.get('connections', {}).items():
+                # 跳过本机ID
+                if device_id == self.device_id:
+                    logger.debug(f"   跳过本机设备: [{device_id[:7]}...]")
+                    continue
+                    
                 connected = conn.get('connected', False)
                 address = conn.get('address', 'N/A')
                 client_version = conn.get('clientVersion', 'N/A')
