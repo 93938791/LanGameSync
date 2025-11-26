@@ -1091,17 +1091,18 @@ class GameInterface(QWidget):
                             }
                         )
                     
+                    # 恢复按钮状态
+                    QTimer.singleShot(0, lambda: self.launch_game_btn.setEnabled(True))
+                    QTimer.singleShot(0, lambda: self.launch_game_btn.setText("启动游戏"))
+                    QTimer.singleShot(0, lambda: self.launch_game_btn.setVisible(True))
+                    QTimer.singleShot(0, lambda: self.close_game_btn.setVisible(False))
+                    
                     QMetaObject.invokeMethod(
                         self,
                         "_show_error_message",
                         Qt.QueuedConnection,
                         Q_ARG(str, f"启动失败: {str(e)}")
                     )
-                finally:
-                    # 恢复按钮状态（使用 lambda 避免 setText 问题）
-                    from PyQt5.QtCore import QTimer
-                    QTimer.singleShot(0, lambda: self.launch_game_btn.setEnabled(True))
-                    QTimer.singleShot(0, lambda: self.launch_game_btn.setText("启动游戏"))
             
             threading.Thread(target=launch_thread, daemon=True).start()
             
