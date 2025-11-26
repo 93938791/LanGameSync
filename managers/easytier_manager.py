@@ -47,9 +47,8 @@ class EasytierManager:
             peers_to_use = custom_peers
         
         args = [
-            # 移除 --no-tun，启用TUN模式以支持直接路由虚拟IP
-            # 注意：TUN模式需要管理员权限
-            "--socks5", "1080",  # 保留SOCKS5以兼容其他功能
+            "--no-tun",
+            "--socks5", "1080",
             "--rpc-portal", "127.0.0.1:15888",  # 显式指定 RPC 端口，供 easytier-cli 连接
             "-d",
             "--network-name", net_name,

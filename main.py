@@ -30,16 +30,25 @@ def run_as_admin():
         if sys.platform == 'win32':
             # 获取当前脚本路径
             script = os.path.abspath(sys.argv[0])
+            
+            # 如果是 .py 文件，使用 pythonw.exe（无窗口）
+            if script.endswith('.py'):
+                python_exe = sys.executable.replace('python.exe', 'pythonw.exe')
+                if not os.path.exists(python_exe):
+                    python_exe = sys.executable
+            else:
+                python_exe = sys.executable
+            
             params = ' '.join([script] + sys.argv[1:])
             
             # 使用 ShellExecute 以管理员权限运行
             ret = ctypes.windll.shell32.ShellExecuteW(
                 None, 
                 "runas",  # 以管理员身份运行
-                sys.executable,  # python.exe
+                python_exe,  # pythonw.exe 或 python.exe
                 params,  # 脚本和参数
                 None,
-                1  # SW_SHOWNORMAL
+                0  # SW_HIDE - 隐藏窗口
             )
             
             if ret > 32:  # 成功
@@ -56,17 +65,6 @@ def run_as_admin():
 def main():
     """主函数"""
     try:
-        # 检查管理员权限（TUN模式必需）
-        if not is_admin():
-            logger.warning("程序需要管理员权限以创建TUN虚拟网卡")
-            logger.info("正在请求管理员权限...")
-            if not run_as_admin():
-                logger.error("无法获取管理员权限，程序退出")
-                sys.exit(1)
-            return  # 新进程会重新启动，当前进程退出
-        
-        logger.info("✅ 已以管理员权限运行")
-        
         # 初始化配置目录
         Config.init_dirs()
         

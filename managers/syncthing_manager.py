@@ -133,7 +133,7 @@ class SyncthingManager:
             return None
     
     def _disable_discovery(self):
-        """禁用Syncthing的本地发现和全局发现，强制只使用指定的虚拟IP地址"""
+        """禁用Syncthing的全局发现和中继，保留本地发现"""
         try:
             config = self.get_config()
             if not config:
@@ -146,8 +146,8 @@ class SyncthingManager:
             original_global = options.get('globalAnnounceEnabled', True)
             original_relay = options.get('relaysEnabled', True)
             
-            # 禁用本地发现、全局发现和中继
-            options['localAnnounceEnabled'] = False  # 禁用本地发现（LAN）
+            # 保留本地发现，禁用全局发现和中继（无TUN模式下需要本地发现）
+            options['localAnnounceEnabled'] = True  # 保留本地发现（LAN）
             options['globalAnnounceEnabled'] = False  # 禁用全局发现（互联网）
             options['relaysEnabled'] = False  # 禁用中继服务器
             options['natEnabled'] = False  # 禁用NAT穿透
@@ -159,14 +159,14 @@ class SyncthingManager:
             result = self.set_config(config, async_mode=False)
             
             if result:
-                logger.info(f"✅ 已禁用Syncthing自动发现：本地发现={original_local}→False, 全局发现={original_global}→False, 中继={original_relay}→False")
-                logger.info("🔒 强制只使用EasyTier虚拟IP进行连接")
+                logger.info(f"✅ 已配置Syncthing发现：本地发现={original_local}→True, 全局发现={original_global}→False, 中继={original_relay}→False")
+                logger.info("🔍 使用本地发现（LAN）进行设备连接")
             else:
-                logger.warning("禁用发现失败")
+                logger.warning("配置发现失败")
             
             return result
         except Exception as e:
-            logger.error(f"禁用发现失败: {e}")
+            logger.error(f"配置发现失败: {e}")
             return False
     
     def _enable_auto_accept_folders(self):
@@ -363,15 +363,21 @@ class SyncthingManager:
                 device_exists = True
                 logger.debug(f"设备已存在: {device_id}")
                 
-                # 即使设备已存在，也要检查是否需要更新地址（TUN模式下直接使用虚拟IP）
-                if device_address:
-                    tcp_address = f"tcp://{device_address}:22000"
-                    current_addresses = device.get("addresses", [])
+                # 即使设备已存在，也要检查是否需要创建端口转发（无TUN模式）
+                if device_address and device_id not in self.device_forward_ports:
+                    # 设备存在但没有端口转发，需要创建
+                    local_port = self.next_forward_port
+                    self.next_forward_port += 1
                     
-                    # 如果地址不匹配，需要更新
-                    if tcp_address not in current_addresses:
+                    # 启动端口转发：127.0.0.1:local_port → SOCKS5 → 虚拟IP:22000
+                    if self.socks5_forwarder.start_forward(local_port, device_address, 22000):
+                        # 记录设备ID和转发端口的映射
+                        self.device_forward_ports[device_id] = local_port
+                        
+                        # 更新设备地址为本地转发地址
+                        tcp_address = f"tcp://127.0.0.1:{local_port}"
                         device["addresses"] = [tcp_address]
-                        logger.info(f"更新设备地址（TUN模式）: {tcp_address}")
+                        logger.info(f"为已存在设备创建SOCKS5转发: {tcp_address} → {device_address}:22000")
                         
                         # 保存配置
                         result = self.set_config(config, async_mode=False)
@@ -379,20 +385,34 @@ class SyncthingManager:
                             # 触发Syncthing重新连接该设备
                             self._restart_device_connection(device_id)
                         return result
+                    else:
+                        logger.warning(f"启动端口转发失败（设备已存在）")
                 
-                # 设备已存在且地址正确，无需操作
+                # 设备已存在且已有端口转发，无需操作
                 return None
         
         # 设备不存在，需要添加
         if not device_exists:
-            # TUN模式下，直接使用虚拟IP地址，不需要SOCKS5转发
+            # 无TUN模式下，创建端口转发（通过SOCKS5代理访问虚拟IP）
+            addresses = ["dynamic"]  # 默认使用dynamic
+            
             if device_address:
-                tcp_address = f"tcp://{device_address}:22000"
-                addresses = [tcp_address]
-                logger.info(f"使用虚拟IP地址（TUN模式）: {tcp_address}")
+                # 分配一个本地转发端口
+                local_port = self.next_forward_port
+                self.next_forward_port += 1
+                
+                # 启动端口转发：127.0.0.1:local_port → SOCKS5 → 虚拟IP:22000
+                if self.socks5_forwarder.start_forward(local_port, device_address, 22000):
+                    # 记录设备ID和转发端口的映射
+                    self.device_forward_ports[device_id] = local_port
+                    
+                    # 使用本地转发地址
+                    tcp_address = f"tcp://127.0.0.1:{local_port}"
+                    addresses = [tcp_address]  # 只使用转发地址
+                    logger.info(f"使用SOCKS5转发: {tcp_address} → {device_address}:22000")
+                else:
+                    logger.warning(f"启动端口转发失败，使用dynamic发现")
             else:
-                # 如果没有提供虚拟IP，使用dynamic
-                addresses = ["dynamic"]
                 logger.warning("未提供虚拟IP地址，使用dynamic发现")
             
             # 添加新设备
