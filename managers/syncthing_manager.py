@@ -10,6 +10,7 @@ from pathlib import Path
 from config import Config
 from utils.logger import Logger
 from utils.process_helper import ProcessHelper
+from managers.socks5_forwarder import SOCKS5Forwarder
 
 logger = Logger().get_logger("SyncthingManager")
 
@@ -24,6 +25,9 @@ class SyncthingManager:
         self.event_thread = None
         self.event_running = False
         self.event_callbacks = []  # 事件回调列表
+        self.socks5_forwarder = SOCKS5Forwarder()  # SOCKS5 端口转发器
+        self.device_forward_ports = {}  # {device_id: local_port} 设备ID到本地转发端口的映射
+        self.next_forward_port = 23001  # 下一个可用的转发端口
     
     def start(self):
         """启动Syncthing服务"""
@@ -83,6 +87,12 @@ class SyncthingManager:
     
     def stop(self):
         """停止Syncthing服务"""
+        # 停止所有端口转发
+        try:
+            self.socks5_forwarder.stop_all()
+        except Exception as e:
+            logger.warning(f"停止端口转发失败: {e}")
+        
         # 停止事件监听
         self.stop_event_listener()
         
@@ -300,7 +310,7 @@ class SyncthingManager:
         Args:
             device_id: 设备ID
             device_name: 设备名称
-            device_address: 设备地址（虚拟IP），例如 "tcp://10.126.126.2:22000"
+            device_address: 设备地址（虚拟IP），例如 "10.126.126.2"
             async_mode: 是否异步执行（默认True，避免阻塞主程序）
             
         Returns:
@@ -316,17 +326,26 @@ class SyncthingManager:
                 logger.debug(f"设备已存在: {device_id}")
                 return None  # 返回None表示设备已存在，无需重复添加
         
-        # 构造设备地址列表
-        # 只使用EasyTier虚拟IP，禁用dynamic发现（避免使用IPv6或其他地址）
+        # 为远程设备创建端口转发（通过SOCKS5代理访问虚拟IP）
+        addresses = ["dynamic"]  # 默认使用dynamic
+        
         if device_address:
-            # 只使用虚拟IP，不使用dynamic（禁用本地发现、全局发现、中继）
-            # Syncthing 默认端口是 22000
-            tcp_address = f"tcp://{device_address}:22000"
-            addresses = [tcp_address]  # 只使用虚拟IP
-            logger.info(f"使用虚拟IP地址（禁用dynamic发现）: {tcp_address}")
+            # 分配一个本地转发端口
+            local_port = self.next_forward_port
+            self.next_forward_port += 1
+            
+            # 启动端口转发：127.0.0.1:local_port → SOCKS5 → 虚拟IP:22000
+            if self.socks5_forwarder.start_forward(local_port, device_address, 22000):
+                # 记录设备ID和转发端口的映射
+                self.device_forward_ports[device_id] = local_port
+                
+                # 使用本地转发地址
+                tcp_address = f"tcp://127.0.0.1:{local_port}"
+                addresses = [tcp_address]  # 只使用转发地址
+                logger.info(f"使用SOCKS5转发: {tcp_address} → {device_address}:22000")
+            else:
+                logger.warning(f"启动端口转发失败，使用dynamic发现")
         else:
-            # 如果没有提供虚拟IP，使用dynamic
-            addresses = ["dynamic"]
             logger.warning("未提供虚拟IP地址，使用dynamic发现")
         
         # 添加新设备
