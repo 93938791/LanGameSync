@@ -835,15 +835,8 @@ class SyncthingManager:
                     
                     folder['paused'] = False
                     logger.info(f"已恢复文件夹同步: {folder_id}")
-                    # 使用同步模式，确保配置立即生效
-                    result = self.set_config(config, async_mode=False)
-                    
-                    # 等待一下然后检查连接状态
-                    if result:
-                        import time
-                        time.sleep(2)  # 等待2秒，让Syncthing尝试连接
-                        logger.info("⚠️ 检查设备连接状态...")
-                        self.get_connections()  # 输出连接状态
+                    # 使用异步模式，避免阻塞主窗口
+                    result = self.set_config(config, async_mode=True)
                     
                     return result
             
@@ -873,8 +866,8 @@ class SyncthingManager:
                 if folder['id'] == folder_id:
                     folder['paused'] = True
                     logger.info(f"已暂停文件夹同步: {folder_id}")
-                    # 使用同步模式，确保配置立即生效
-                    return self.set_config(config, async_mode=False)
+                    # 使用异步模式，避免阻塞主窗口
+                    return self.set_config(config, async_mode=True)
             
             logger.warning(f"未找到文件夹: {folder_id}")
             return False
