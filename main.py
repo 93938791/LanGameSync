@@ -80,22 +80,26 @@ def main():
             logo_path = os.path.join(os.path.dirname(__file__), 'resources', 'logo.png')
         logo_icon = QIcon(logo_path) if os.path.exists(logo_path) else QIcon()
         
-        # 创建主窗口
+        # 创建主窗口（但先不显示）
         window = FluentMainWindow()
         
         # 创建启动页面
         splash = SplashScreen(logo_icon, window)
         splash.setIconSize(QSize(400, 400))
         
-        # 设置启动页面窗口标志
+        # 设置启动页面窗口标志（隐藏控制按钮）
         splash.setWindowFlags(Qt.SplashScreen | Qt.FramelessWindowHint)
         
-        # 移动启动页面到屏幕中心
+        # 设置启动页面固定尺寸（与主窗口保持一致）
+        # 主窗口尺寸在 FluentMainWindow.init_window() 中设置为 1120x700
+        splash_width = 1120
+        splash_height = 700
+        splash.setFixedSize(splash_width, splash_height)
+        
+        # 移动启动页面到屏幕中心（使用与主窗口完全相同的计算方式）
         desktop = QApplication.desktop().availableGeometry()
-        splash.move(
-            (desktop.width() - splash.width()) // 2,
-            (desktop.height() - splash.height()) // 2
-        )
+        w, h = desktop.width(), desktop.height()
+        splash.move(w // 2 - splash_width // 2, h // 2 - splash_height // 2)
         
         # 显示启动页面（在主窗口显示之前）
         splash.show()
