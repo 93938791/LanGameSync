@@ -379,9 +379,6 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
             self.parent_window.syncthing_manager.register_event_callback(self.parent_window.on_syncthing_event)
             logger.info("已注册Syncthing事件监听")
             
-            # 自动暂停所有同步文件夹（防止自动同步）
-            self._pause_all_folders_on_connect()
-            
             # 初始化UDP广播
             from managers.udp_broadcast import UDPBroadcast
             self.parent_window.udp_broadcast = UDPBroadcast()
@@ -438,29 +435,6 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
                 parent=self
             )
     
-    def _pause_all_folders_on_connect(self):
-        """连接成功后自动暂停所有文件夹（防止自动同步）"""
-        try:
-            if not hasattr(self.parent_window, 'syncthing_manager') or not self.parent_window.syncthing_manager:
-                return
-            
-            config = self.parent_window.syncthing_manager.get_config()
-            if not config:
-                return
-            
-            folders = config.get('folders', [])
-            paused_count = 0
-            
-            for folder in folders:
-                if not folder.get('paused', False):
-                    folder['paused'] = True
-                    paused_count += 1
-            
-            if paused_count > 0:
-                self.parent_window.syncthing_manager.set_config(config)
-                logger.info(f"连接成功后自动暂停了 {paused_count} 个文件夹，防止自动同步")
-        except Exception as e:
-            logger.error(f"自动暂停文件夹失败: {e}")
     
     def disconnect_network(self):
         """断开网络连接"""
