@@ -533,12 +533,19 @@ class SyncInterface(ScrollArea):
         super().showEvent(event)
         logger.info("进入存档同步页面，开始发现设备...")
         
-        # 刷新页面显示
-        self.refresh_sync()
+        # 在后台线程中刷新页面显示，避免阻塞主窗口
+        import threading
+        def async_refresh():
+            try:
+                self.refresh_sync()
+                
+                # 启动设备发现（只发现一次）
+                if hasattr(self.parent_window, 'is_connected') and self.parent_window.is_connected:
+                    self._discover_devices_once()
+            except Exception as e:
+                logger.error(f"后台刷新失败: {e}")
         
-        # 启动设备发现（只发现一次）
-        if hasattr(self.parent_window, 'is_connected') and self.parent_window.is_connected:
-            self._discover_devices_once()
+        threading.Thread(target=async_refresh, daemon=True).start()
         
         # 启动自动刷新定时器
         self.auto_refresh_timer.start()
