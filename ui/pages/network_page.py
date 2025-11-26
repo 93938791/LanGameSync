@@ -2,8 +2,8 @@
 联机设置页面 - Fluent Design 风格
 """
 import os
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidgetItem, QHeaderView
+from PyQt5.QtCore import Qt, QTimer, QPropertyAnimation, QRect
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidgetItem, QHeaderView, QGraphicsOpacityEffect
 from PyQt5.QtGui import QFont, QColor, QPixmap
 from qfluentwidgets import (
     ScrollArea, CardWidget, BodyLabel, SubtitleLabel, CaptionLabel,
@@ -33,6 +33,10 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
         self.discovery_thread = None  # 设备发现线程
         self.discovery_running = False  # 设备发现线程运行标志
         
+        # 流量统计定时器
+        self.traffic_timer = QTimer()
+        self.traffic_timer.timeout.connect(self.update_traffic_stats)
+        
         # 设置全局唯一的对象名称（必须）
         self.setObjectName("networkInterface")
         
@@ -57,9 +61,9 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
         # 主内容区域（流式布局）
         content_widget = QWidget()
         content_layout = FlowLayout(content_widget, needAni=False)
-        content_layout.setContentsMargins(20, 20, 20, 20)
-        content_layout.setHorizontalSpacing(20)
-        content_layout.setVerticalSpacing(20)
+        content_layout.setContentsMargins(30, 30, 30, 30)
+        content_layout.setHorizontalSpacing(25)
+        content_layout.setVerticalSpacing(25)
         
         # 4个部分
         # 1. 节点设置
@@ -100,17 +104,21 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
     def create_node_card(self):
         """创建节点设置卡片"""
         card = CardWidget()
-        card.setFixedSize(280, 200)
+        card.setFixedSize(320, 280)
         card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(20, 15, 20, 15)
-        card_layout.setSpacing(12)
+        card_layout.setContentsMargins(24, 24, 24, 24)
+        card_layout.setSpacing(18)
         
         # 标题
-        title = BodyLabel("节点设置")
-        title.setStyleSheet("font-weight: 600; font-size: 14px;")
+        title = SubtitleLabel("节点设置")
+        title.setStyleSheet("font-weight: 600; font-size: 16px;")
         card_layout.addWidget(title)
         
         # 节点选择
+        node_label = CaptionLabel("当前节点")
+        node_label.setStyleSheet("color: #666;")
+        card_layout.addWidget(node_label)
+        
         self.node_combo = ComboBox()
         self.node_combo.addItem("官方节点")
         self.node_combo.setEnabled(False)
@@ -119,7 +127,8 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
         card_layout.addStretch()
         
         # 配置按钮
-        config_btn = PushButton(FluentIcon.SETTING, "配置")
+        config_btn = PushButton(FluentIcon.SETTING, "配置节点")
+        config_btn.setMinimumHeight(36)
         config_btn.clicked.connect(self.show_peer_manager)
         card_layout.addWidget(config_btn)
         
@@ -128,44 +137,66 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
     def create_traffic_card(self):
         """创建流量卡片"""
         card = CardWidget()
-        card.setFixedSize(280, 200)
+        card.setFixedSize(320, 280)
         card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(20, 15, 20, 15)
-        card_layout.setSpacing(12)
+        card_layout.setContentsMargins(24, 24, 24, 24)
+        card_layout.setSpacing(18)
         
         # 标题
-        title = BodyLabel("流量统计")
-        title.setStyleSheet("font-weight: 600; font-size: 14px;")
+        title = SubtitleLabel("流量统计")
+        title.setStyleSheet("font-weight: 600; font-size: 16px;")
         card_layout.addWidget(title)
         
-        # 上传
+        # 上传流量
+        upload_label = CaptionLabel("上传流量")
+        upload_label.setStyleSheet("color: #666;")
+        card_layout.addWidget(upload_label)
+        
         upload_row = QHBoxLayout()
-        upload_icon = IconWidget(FluentIcon.UP)
-        upload_icon.setFixedSize(16, 16)
+        # 使用PNG图标
+        upload_icon = QLabel()
+        upload_icon.setFixedSize(20, 20)
+        upload_icon.setAlignment(Qt.AlignCenter)
+        upload_icon_path = str(Config.RESOURCES_DIR / "icons" / "upload.png")
+        if os.path.exists(upload_icon_path):
+            pixmap = QPixmap(upload_icon_path)
+            upload_icon.setPixmap(pixmap.scaled(20, 20, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         upload_row.addWidget(upload_icon)
         
-        upload_label = BodyLabel("上传:")
-        upload_row.addWidget(upload_label)
-        
         self.upload_value = BodyLabel("0 MB")
-        self.upload_value.setStyleSheet("color: #0078d4; font-weight: 600;")
+        self.upload_value.setStyleSheet("color: #0078d4; font-weight: 600; font-size: 15px;")
         upload_row.addWidget(self.upload_value)
         upload_row.addStretch()
+        
+        self.upload_speed = CaptionLabel("0 KB/s")
+        self.upload_speed.setStyleSheet("color: #999;")
+        upload_row.addWidget(self.upload_speed)
         card_layout.addLayout(upload_row)
         
-        # 下载
+        # 下载流量
+        download_label = CaptionLabel("下载流量")
+        download_label.setStyleSheet("color: #666;")
+        card_layout.addWidget(download_label)
+        
         download_row = QHBoxLayout()
-        download_icon = IconWidget(FluentIcon.DOWN)
-        download_icon.setFixedSize(16, 16)
+        # 使用PNG图标
+        download_icon = QLabel()
+        download_icon.setFixedSize(20, 20)
+        download_icon.setAlignment(Qt.AlignCenter)
+        download_icon_path = str(Config.RESOURCES_DIR / "icons" / "download.png")
+        if os.path.exists(download_icon_path):
+            pixmap = QPixmap(download_icon_path)
+            download_icon.setPixmap(pixmap.scaled(20, 20, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         download_row.addWidget(download_icon)
         
-        download_label = BodyLabel("下载:")
-        download_row.addWidget(download_label)
-        
         self.download_value = BodyLabel("0 MB")
-        self.download_value.setStyleSheet("color: #10893e; font-weight: 600;")
+        self.download_value.setStyleSheet("color: #10893e; font-weight: 600; font-size: 15px;")
         download_row.addWidget(self.download_value)
         download_row.addStretch()
+        
+        self.download_speed = CaptionLabel("0 KB/s")
+        self.download_speed.setStyleSheet("color: #999;")
+        download_row.addWidget(self.download_speed)
         card_layout.addLayout(download_row)
         
         card_layout.addStretch()
@@ -175,19 +206,23 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
     def create_network_card(self):
         """创建网络关联卡片"""
         card = CardWidget()
-        card.setFixedSize(280, 200)
+        card.setFixedSize(320, 280)
         card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(20, 15, 20, 15)
-        card_layout.setSpacing(12)
+        card_layout.setContentsMargins(24, 24, 24, 24)
+        card_layout.setSpacing(18)
         
         # 标题
-        title = BodyLabel("网络关联")
-        title.setStyleSheet("font-weight: 600; font-size: 14px;")
+        title = SubtitleLabel("网络关联")
+        title.setStyleSheet("font-weight: 600; font-size: 16px;")
         card_layout.addWidget(title)
         
         # 房间号
+        room_label = CaptionLabel("房间号")
+        room_label.setStyleSheet("color: #666;")
+        card_layout.addWidget(room_label)
+        
         self.room_input = LineEdit()
-        self.room_input.setPlaceholderText("房间号")
+        self.room_input.setPlaceholderText("请输入房间号")
         self.room_input.setClearButtonEnabled(True)
         
         # 加载配置
@@ -198,8 +233,12 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
         card_layout.addWidget(self.room_input)
         
         # 密码
+        password_label = CaptionLabel("密码")
+        password_label.setStyleSheet("color: #666;")
+        card_layout.addWidget(password_label)
+        
         self.password_input = PasswordLineEdit()
-        self.password_input.setPlaceholderText("密码")
+        self.password_input.setPlaceholderText("请输入密码")
         self.password_input.setClearButtonEnabled(True)
         
         if network_config.get("password"):
@@ -210,44 +249,60 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
         card_layout.addStretch()
         
         # 连接按钮
-        self.connect_btn = PrimaryPushButton(FluentIcon.CONNECT, "连接")
+        self.connect_btn = PrimaryPushButton(FluentIcon.CONNECT, "连接网络")
+        self.connect_btn.setMinimumHeight(36)
         self.connect_btn.clicked.connect(self.connect_to_network)
         card_layout.addWidget(self.connect_btn)
         
         return card
     
     def create_devices_card(self):
-        """创建设备列表区域（无外框，动态显示）"""
-        # 直接返回一个透明容器，不用 CardWidget
+        """创建设备列表区域（无外边框）"""
+        # 使用透明容器，不显示边框
         container = QWidget()
-        container.setFixedSize(580, 200)
+        container.setFixedSize(1000, 280)
+        container.setStyleSheet("background: transparent;")
         
-        # 设备容器（流式布局，动态添加设备）
-        devices_layout = QHBoxLayout(container)
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(16)
+        
+        # 标题
+        title = SubtitleLabel("已连接设备")
+        title.setStyleSheet("font-weight: 600; font-size: 16px; background: transparent;")
+        container_layout.addWidget(title)
+        
+        # 设备容器（横向布局，动态添加设备）
+        devices_container = QWidget()
+        devices_container.setStyleSheet("background: transparent;")
+        devices_layout = QHBoxLayout(devices_container)
         devices_layout.setContentsMargins(0, 0, 0, 0)
-        devices_layout.setSpacing(15)
+        devices_layout.setSpacing(18)
         devices_layout.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         
         # 保存布局引用
         self.devices_layout = devices_layout
         self.device_widgets = []  # 存储当前显示的设备卡片
         
+        container_layout.addWidget(devices_container)
+        container_layout.addStretch()
+        
         return container
     
     def create_single_device_card(self, device_name="", device_ip="", is_self=False, latency=0):
         """创建单个设备卡片（使用 ElevatedCardWidget 有阴影效果）"""
         device = ElevatedCardWidget()
-        device.setFixedSize(100, 110)
+        device.setFixedSize(140, 170)  # 统一固定尺寸
         
         layout = QVBoxLayout(device)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(3)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
         layout.setAlignment(Qt.AlignCenter)
         
         # 状态图标（根据延迟显示不同图片）
         icon_label = QLabel()
         icon_label.setAlignment(Qt.AlignCenter)
-        icon_label.setFixedSize(48, 48)
+        icon_label.setFixedSize(64, 64)
         
         # 根据延迟选择图标
         if is_self:
@@ -267,7 +322,7 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
         # 加载图片
         if os.path.exists(icon_path):
             pixmap = QPixmap(icon_path)
-            icon_label.setPixmap(pixmap.scaled(48, 48, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            icon_label.setPixmap(pixmap.scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         else:
             # 如果图片不存在，使用表情作为后备
             logger.warning(f"找不到图标文件: {icon_path}")
@@ -280,30 +335,83 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
             else:
                 emoji = "😐"
             icon_label.setText(emoji)
-            icon_label.setStyleSheet("font-size: 38px;")
+            icon_label.setStyleSheet("font-size: 52px;")
         
         layout.addWidget(icon_label, 0, Qt.AlignCenter)
         
-        # 设备名
+        # 设备名（支持滚动显示，固定高度）
         name_color = "#0078d4" if is_self else "#107c10"
-        name_label = CaptionLabel(device_name)
+        name_container = QWidget()
+        name_container.setFixedSize(116, 22)  # 固定宽度和高度
+        name_layout = QHBoxLayout(name_container)
+        name_layout.setContentsMargins(0, 0, 0, 0)
+        name_layout.setSpacing(0)
+        
+        name_label = BodyLabel(device_name)
         name_label.setAlignment(Qt.AlignCenter)
         name_label.setStyleSheet(f"""
             color: {name_color}; 
-            font-size: 11px;
+            font-size: 13px;
             font-weight: 600;
+            background: transparent;
         """)
-        layout.addWidget(name_label)
+        name_label.setWordWrap(False)
+        name_layout.addWidget(name_label)
         
-        # IP地址
-        ip_label = CaptionLabel(device_ip)
+        # 如果设备名过长，启用滚动动画
+        if len(device_name) > 8:  # 超过8个字符启用滚动
+            name_container.setStyleSheet("overflow: hidden;")
+            # 创建滚动动画
+            self._setup_scroll_animation(name_label, device_name)
+        
+        layout.addWidget(name_container, 0, Qt.AlignCenter)
+        
+        # IP地址（加大字号，固定高度）
+        ip_container = QWidget()
+        ip_container.setFixedSize(116, 18)  # 固定高度确保对齐
+        ip_layout = QHBoxLayout(ip_container)
+        ip_layout.setContentsMargins(0, 0, 0, 0)
+        ip_layout.setSpacing(0)
+        
+        ip_label = BodyLabel(device_ip)
         ip_label.setAlignment(Qt.AlignCenter)
         ip_label.setStyleSheet(f"""
-            color: #888888; 
-            font-size: 9px;
+            color: #555555; 
+            font-size: 12px;
+            font-weight: 500;
             font-family: 'Consolas', monospace;
+            background: transparent;
         """)
-        layout.addWidget(ip_label)
+        # 设置工具提示显示设备名称
+        ip_label.setToolTip(f"设备名称: {device_name}")
+        ip_layout.addWidget(ip_label)
+        
+        layout.addWidget(ip_container, 0, Qt.AlignCenter)
+        
+        # 延迟信息（如果不是本机，固定高度）
+        if not is_self:
+            latency_container = QWidget()
+            latency_container.setFixedSize(116, 16)  # 固定高度
+            latency_layout = QHBoxLayout(latency_container)
+            latency_layout.setContentsMargins(0, 0, 0, 0)
+            latency_layout.setSpacing(0)
+            
+            latency_label = CaptionLabel(f"{latency}ms" if latency > 0 else "-")
+            latency_label.setAlignment(Qt.AlignCenter)
+            latency_color = "#10893e" if latency < 50 else "#ca5010" if latency < 100 else "#d13438"
+            latency_label.setStyleSheet(f"""
+                color: {latency_color}; 
+                font-size: 10px;
+                font-weight: 500;
+                background: transparent;
+            """)
+            latency_layout.addWidget(latency_label)
+            layout.addWidget(latency_container, 0, Qt.AlignCenter)
+        else:
+            # 本机设备也添加一个空的容器占位，保持高度一致
+            spacer_container = QWidget()
+            spacer_container.setFixedSize(116, 16)
+            layout.addWidget(spacer_container, 0, Qt.AlignCenter)
         
         # 存储引用
         device.icon_label = icon_label
@@ -314,6 +422,22 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
         device.is_self = is_self
         
         return device
+    
+    def _setup_scroll_animation(self, label, text):
+        """设置文本滚动动画"""
+        # 创建定时器实现滚动效果
+        timer = QTimer(label)
+        scroll_pos = [0]  # 使用列表以便在闭包中修改
+        
+        def scroll_text():
+            # 循环滚动文本
+            scroll_pos[0] = (scroll_pos[0] + 1) % len(text)
+            scrolled_text = text[scroll_pos[0]:] + "  " + text[:scroll_pos[0]]
+            label.setText(scrolled_text)
+        
+        timer.timeout.connect(scroll_text)
+        timer.start(300)  # 每300ms滚动一次
+        label.scroll_timer = timer  # 保存引用防止被回收
     
     def show_peer_manager(self):
         """显示节点管理器"""
@@ -408,6 +532,10 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
             self.parent_window.last_peer_count = 0
             self.update_clients_list()
             
+            # 启动流量统计定时器（每2秒更新一次）
+            self.traffic_timer.start(2000)
+            logger.info("流量统计定时器已启动")
+            
             # 不再启动持续轮询线程，改为连接时发现一次
             # self._start_device_discovery_thread()  # 已禁用
             logger.info("设备发现已完成，不启动持续监测")
@@ -442,6 +570,11 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
             # 停止设备发现线程
             self._stop_device_discovery_thread()
             
+            # 停止流量统计定时器
+            if self.traffic_timer.isActive():
+                self.traffic_timer.stop()
+                logger.info("流量统计定时器已停止")
+            
             # TODO: 实现断开逻辑
             self.parent_window.is_connected = False
             self.current_ip_label.setText("当前 IP: 未连接")
@@ -454,6 +587,12 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
             for widget in self.device_widgets:
                 widget.deleteLater()
             self.device_widgets.clear()
+            
+            # 重置流量显示
+            self.upload_value.setText("0 MB")
+            self.download_value.setText("0 MB")
+            self.upload_speed.setText("0 KB/s")
+            self.download_speed.setText("0 KB/s")
             
             InfoBar.info(
                 title='已断开',
@@ -487,6 +626,14 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
                 "is_self": True
             })
             
+            # 获取当前Syncthing连接状态
+            connections = self.parent_window.syncthing_manager.get_connections()
+            connected_device_ids = set()
+            if connections and connections.get('connections'):
+                for dev_id, conn_info in connections['connections'].items():
+                    if conn_info.get('connected'):
+                        connected_device_ids.add(dev_id)
+            
             # 添加其他设备（过滤掉本机）
             seen_ips = set([my_ip])
             
@@ -511,6 +658,10 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
                             logger.info(f"自动发现并添加设备: {hostname} ({device_id[:7]}...) - {ipv4}")
                             # 将设备添加到所有正在同步的文件夹
                             self._add_device_to_active_folders(device_id)
+                        # 如果设备已存在但未连接，触发重连
+                        elif result is None and device_id not in connected_device_ids:
+                            logger.info(f"🔄 设备 {hostname} ({device_id[:7]}...) 已上线但未连接，触发重连...")
+                            self.parent_window.syncthing_manager._restart_device_connection(device_id)
                     
                     # 获取延迟（如果有）
                     latency_str = peer.get('latency', '0ms')
@@ -615,6 +766,17 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
                     my_syncthing_id = self.parent_window.syncthing_manager.device_id
                     my_ip = self.parent_window.controller.easytier.virtual_ip or "unknown"
                     
+                    # 获取当前Syncthing连接状态
+                    connections = self.parent_window.syncthing_manager.get_connections()
+                    connected_device_ids = set()
+                    if connections and connections.get('connections'):
+                        for dev_id, conn_info in connections['connections'].items():
+                            if conn_info.get('connected'):
+                                connected_device_ids.add(dev_id)
+                    
+                    # 收集在线的EasyTier设备ID
+                    online_device_ids = set()
+                    
                     # 遍历所有对等设备
                     for peer in peers:
                         ipv4 = peer.get('ipv4', '')
@@ -628,6 +790,8 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
                         device_id = self._get_remote_syncthing_id(ipv4)
                         
                         if device_id and device_id != my_syncthing_id:
+                            online_device_ids.add(device_id)
+                            
                             # 添加设备到Syncthing（如果已存在则返回None）
                             # 传递虚拟IP地址，使Syncthing可以通过虚拟网络连接
                             result = self.parent_window.syncthing_manager.add_device(
@@ -641,6 +805,10 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
                                 
                                 # 将设备添加到所有正在同步的文件夹
                                 self._add_device_to_active_folders(device_id)
+                            # 如果设备已存在但未连接，触发重连
+                            elif result is None and device_id not in connected_device_ids:
+                                logger.info(f"🔄 设备 {hostname} ({device_id[:7]}...) 已上线但未连接，触发重连...")
+                                self.parent_window.syncthing_manager._restart_device_connection(device_id)
                     
                     # 每10秒扫描一次
                     time.sleep(10)
@@ -694,3 +862,47 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
                 logger.info("已更新Syncthing配置，新设备已添加到所有同步文件夹")
         except Exception as e:
             logger.error(f"添加设备到文件夹失败: {e}")
+    
+    def update_traffic_stats(self):
+        """更新流量统计（定时调用）"""
+        if not self.parent_window.is_connected:
+            return
+        
+        try:
+            # 获取流量统计
+            stats = self.parent_window.controller.easytier.get_traffic_stats()
+            
+            # 格式化流量显示
+            tx_bytes = stats.get('tx_bytes', 0)
+            rx_bytes = stats.get('rx_bytes', 0)
+            tx_speed = stats.get('tx_speed', 0)
+            rx_speed = stats.get('rx_speed', 0)
+            
+            # 转换为合适的单位
+            self.upload_value.setText(self._format_bytes(tx_bytes))
+            self.download_value.setText(self._format_bytes(rx_bytes))
+            self.upload_speed.setText(self._format_speed(tx_speed))
+            self.download_speed.setText(self._format_speed(rx_speed))
+            
+        except Exception as e:
+            logger.error(f"更新流量统计失败: {e}")
+    
+    def _format_bytes(self, bytes_value):
+        """格式化字节数为可读格式"""
+        if bytes_value < 1024:
+            return f"{bytes_value} B"
+        elif bytes_value < 1024 * 1024:
+            return f"{bytes_value / 1024:.2f} KB"
+        elif bytes_value < 1024 * 1024 * 1024:
+            return f"{bytes_value / 1024 / 1024:.2f} MB"
+        else:
+            return f"{bytes_value / 1024 / 1024 / 1024:.2f} GB"
+    
+    def _format_speed(self, speed_bytes_per_sec):
+        """格式化速度为可读格式"""
+        if speed_bytes_per_sec < 1024:
+            return f"{speed_bytes_per_sec:.0f} B/s"
+        elif speed_bytes_per_sec < 1024 * 1024:
+            return f"{speed_bytes_per_sec / 1024:.2f} KB/s"
+        else:
+            return f"{speed_bytes_per_sec / 1024 / 1024:.2f} MB/s"
