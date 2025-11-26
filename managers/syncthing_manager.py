@@ -364,6 +364,11 @@ class SyncthingManager:
         Returns:
             bool: True-新增成功或更新成功, False-失败, None-设备已存在且无需更新
         """
+        # 检查是否是自己的设备ID，不应该添加自己
+        if device_id == self.device_id:
+            logger.debug(f"跳过添加自己的设备: {device_id[:7]}...")
+            return None
+        
         config = self.get_config()
         if not config:
             return False
