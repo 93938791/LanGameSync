@@ -1147,7 +1147,42 @@ class GameInterface(QWidget):
             
             if folder_exists:
                 # 文件夹已存在，直接恢复同步
-                self.parent_window.syncthing_manager.resume_folder(folder_id)
+                success = self.parent_window.syncthing_manager.resume_folder(folder_id)
+                if not success:
+                    InfoBar.error(
+                        title='错误',
+                        content="恢复同步失败",
+                        orient=Qt.Horizontal,
+                        isClosable=True,
+                        position=InfoBarPosition.TOP,
+                        duration=2000,
+                        parent=self
+                    )
+                    return
+                
+                # 等待 Syncthing 处理配置
+                import time
+                time.sleep(2)
+                
+                # 验证文件夹是否成功恢复
+                config_verify = self.parent_window.syncthing_manager.get_config()
+                if config_verify:
+                    for folder in config_verify.get('folders', []):
+                        if folder.get('id') == folder_id:
+                            is_paused = folder.get('paused', True)
+                            if is_paused:
+                                InfoBar.error(
+                                    title='错误',
+                                    content="文件夹恢复失败，仍处于暂停状态",
+                                    orient=Qt.Horizontal,
+                                    isClosable=True,
+                                    position=InfoBarPosition.TOP,
+                                    duration=3000,
+                                    parent=self
+                                )
+                                return
+                            logger.info(f"文件夹已成功恢复: {folder_id}, 暂停状态: {is_paused}")
+                            break
             else:
                 # 文件夹不存在，需要创建
                 # 获取所有设备ID（除了本机）
