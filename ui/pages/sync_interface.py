@@ -363,10 +363,15 @@ class SyncInterface(ScrollArea):
                     status_item.setTextAlignment(Qt.AlignCenter)
                     self.sync_folders_table.setItem(row, 2, status_item)
                     
-                    # 设备数（只统计已连接的）
+                    # 设备数统计：远程设备 + 本机
                     folder_devices = [d['deviceID'] for d in folder.get('devices', [])]
+                    # 统计已连接的远程设备数
                     connected_count = sum(1 for dev_id in folder_devices if dev_id in connected_devices)
-                    device_item = QTableWidgetItem(f"{connected_count}/{len(folder_devices)}")
+                    # 总设备数 = 远程设备数 + 1（本机）
+                    total_devices = len(folder_devices) + 1
+                    # 已连接设备数 = 已连接的远程设备数 + 1（本机）
+                    total_connected = connected_count + 1
+                    device_item = QTableWidgetItem(f"{total_connected}/{total_devices}")
                     device_item.setTextAlignment(Qt.AlignCenter)
                     self.sync_folders_table.setItem(row, 3, device_item)
                 

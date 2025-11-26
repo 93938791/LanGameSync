@@ -592,7 +592,7 @@ class SyncthingManager:
             "fsWatcherDelayS": watcher_delay,  # 懒同步延迟
             "ignorePerms": False,
             "autoNormalize": True,
-            "minDiskFree": {"value": 1, "unit": "%"},
+            "minDiskFree": {"value": 0.5, "unit": "%"},
             "versioning": {"type": "", "params": {}},
             "copiers": 0,
             "pullerMaxPendingKiB": 0,
