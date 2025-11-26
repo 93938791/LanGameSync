@@ -83,9 +83,6 @@ class SyncthingManager:
         self.device_id = self.get_device_id()
         logger.info(f"Syncthing启动成功，设备ID: {self.device_id}")
         
-        # 清理配置中错误添加的本机设备ID
-        self._remove_self_from_devices()
-        
         # 禁用本地发现和全局发现，强制只使用EasyTier虚拟IP
         self._disable_discovery()
         
@@ -218,36 +215,7 @@ class SyncthingManager:
             logger.error(f"启用自动接受失败: {e}")
             return False
     
-    def _remove_self_from_devices(self):
-        """清理配置中错误添加的本机设备ID"""
-        try:
-            config = self.get_config()
-            if not config:
-                logger.warning("无法获取配置，跳过清理本机设备")
-                return False
-            
-            devices = config.get('devices', [])
-            original_count = len(devices)
-            
-            # 过滤掉本机的设备ID
-            config['devices'] = [dev for dev in devices if dev.get('deviceID') != self.device_id]
-            
-            removed_count = original_count - len(config['devices'])
-            if removed_count > 0:
-                result = self.set_config(config, async_mode=False)
-                if result:
-                    logger.info(f"✅ 已清理配置中的本机设备ID (删除{removed_count}个)")
-                    return True
-                else:
-                    logger.warning("清理本机设备失败")
-                    return False
-            else:
-                logger.debug("配置中没有本机设备ID，无需清理")
-                return True
-        except Exception as e:
-            logger.error(f"清理本机设备失败: {e}")
-            return False
-    
+
     def _configure_listen_address(self):
         """配置监听地址，确保监听所有网络接口（Syncthing v2.0+）"""
         try:
@@ -380,7 +348,7 @@ class SyncthingManager:
                     config['devices'] = [dev for dev in config['devices'] if dev.get('deviceID') != self.device_id]
                     removed = original_count - len(config['devices'])
                     if removed > 0:
-                        logger.debug(f"⚠️ set_config中清理了 {removed} 个本机ID")
+                        logger.warning(f"⚠️ set_config检测到并清理了 {removed} 个本机ID（不应该发生）")
                 
                 resp = requests.put(
                     f"{self.api_url}/rest/config",
@@ -730,17 +698,8 @@ class SyncthingManager:
             # 查找文件夹
             for folder in config.get('folders', []):
                 if folder['id'] == folder_id:
-                    # 清理设备列表中的本机ID（关键修复）
+                    # 检查是否有共享设备（get_config已自动过滤本机ID）
                     folder_devices = folder.get('devices', [])
-                    original_count = len(folder_devices)
-                    # 过滤掉本机ID
-                    folder_devices = [dev for dev in folder_devices if dev.get('deviceID') != self.device_id]
-                    folder['devices'] = folder_devices
-                    
-                    if original_count != len(folder_devices):
-                        logger.info(f"✅ 已从文件夹 {folder_id} 中清理本机ID (删除{original_count - len(folder_devices)}个)")
-                    
-                    # 检查是否有共享设备
                     if not folder_devices:
                         logger.warning(f"⚠️ 文件夹 {folder_id} 未共享给任何设备，无法同步")
                         return False
