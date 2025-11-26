@@ -20,6 +20,10 @@ class EasytierManager:
         self.process = None
         self.virtual_ip = None
         self.peer_ips = []
+        # 流量统计数据
+        self.last_tx_bytes = 0
+        self.last_rx_bytes = 0
+        self.last_update_time = 0
     
     def start(self, custom_peers=None, network_name=None, network_secret=None):
         """启动Easytier虚拟网络
@@ -325,3 +329,160 @@ class EasytierManager:
         
         logger.warning(f"等待设备超时，当前仅 {len(self.peer_ips)} 台")
         return False
+    
+    def get_traffic_stats(self):
+        """
+        获取流量统计信息（通过 easytier-cli connector 命令）
+        
+        Returns:
+            dict: 流量统计信息
+                {
+                    'tx_bytes': 上传字节数,
+                    'rx_bytes': 下载字节数,
+                    'tx_speed': 上传速度(bytes/s),
+                    'rx_speed': 下载速度(bytes/s)
+                }
+        """
+        try:
+            # 调用 easytier-cli connector 获取流量统计
+            if not Config.EASYTIER_CLI.exists():
+                logger.warning(f"easytier-cli 不存在: {Config.EASYTIER_CLI}")
+                return {
+                    'tx_bytes': 0,
+                    'rx_bytes': 0,
+                    'tx_speed': 0,
+                    'rx_speed': 0
+                }
+            
+            # 需要隐藏窗口的startupinfo
+            startupinfo = None
+            creationflags = 0
+            if sys.platform == 'win32':
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+                creationflags = 0x08000000  # CREATE_NO_WINDOW
+            
+            result = subprocess.run(
+                [str(Config.EASYTIER_CLI), "connector"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                encoding='utf-8',
+                startupinfo=startupinfo,
+                creationflags=creationflags
+            )
+            
+            if result.returncode != 0:
+                logger.warning(f"easytier-cli connector 执行失败: {result.stderr}")
+                return {
+                    'tx_bytes': 0,
+                    'rx_bytes': 0,
+                    'tx_speed': 0,
+                    'rx_speed': 0
+                }
+            
+            # 解析输出
+            stats = self._parse_traffic_stats(result.stdout)
+            
+            # 计算速度
+            current_time = time.time()
+            time_delta = current_time - self.last_update_time if self.last_update_time > 0 else 1
+            
+            tx_speed = 0
+            rx_speed = 0
+            
+            if self.last_update_time > 0:
+                tx_speed = (stats['tx_bytes'] - self.last_tx_bytes) / time_delta
+                rx_speed = (stats['rx_bytes'] - self.last_rx_bytes) / time_delta
+            
+            # 更新历史数据
+            self.last_tx_bytes = stats['tx_bytes']
+            self.last_rx_bytes = stats['rx_bytes']
+            self.last_update_time = current_time
+            
+            stats['tx_speed'] = max(0, tx_speed)  # 确保速度非负
+            stats['rx_speed'] = max(0, rx_speed)
+            
+            return stats
+            
+        except subprocess.TimeoutExpired:
+            logger.warning("获取流量统计超时")
+            return {
+                'tx_bytes': 0,
+                'rx_bytes': 0,
+                'tx_speed': 0,
+                'rx_speed': 0
+            }
+        except Exception as e:
+            logger.error(f"获取流量统计失败: {e}")
+            return {
+                'tx_bytes': 0,
+                'rx_bytes': 0,
+                'tx_speed': 0,
+                'rx_speed': 0
+            }
+    
+    def _parse_traffic_stats(self, output):
+        """
+        解析 easytier-cli connector 的输出，提取流量统计信息
+        
+        Args:
+            output: 命令输出文本
+        
+        Returns:
+            dict: {'tx_bytes': int, 'rx_bytes': int}
+        """
+        tx_bytes = 0
+        rx_bytes = 0
+        
+        try:
+            lines = output.strip().split('\n')
+            
+            # 解析表格数据，查找 tx_bytes 和 rx_bytes 列
+            in_data = False
+            for line in lines:
+                line = line.strip()
+                
+                # 跳过空行
+                if not line:
+                    continue
+                
+                # 识别表头
+                if 'tx_bytes' in line.lower() and 'rx_bytes' in line.lower():
+                    in_data = True
+                    continue
+                
+                # 跳过分隔符行
+                if line.startswith('---') or line.startswith('===') or set(line.replace('|', '').strip()) == {'-'}:
+                    continue
+                
+                # 解析数据行
+                if in_data and '|' in line:
+                    parts = [p.strip() for p in line.split('|')]
+                    
+                    # 查找 tx_bytes 和 rx_bytes 列（通常在后面几列）
+                    for i, part in enumerate(parts):
+                        # 累加所有连接的流量
+                        if part.isdigit():
+                            # 简化处理：找到数字列，通常tx_bytes在rx_bytes之前
+                            # 需要根据实际输出格式调整
+                            try:
+                                # 尝试解析流量数据（可能需要根据实际格式调整）
+                                if i >= len(parts) - 2:  # 假设最后两列是tx_bytes和rx_bytes
+                                    if i == len(parts) - 2:
+                                        tx_bytes += int(part)
+                                    elif i == len(parts) - 1:
+                                        rx_bytes += int(part)
+                            except ValueError:
+                                continue
+            
+            logger.debug(f"解析流量统计: TX={tx_bytes} bytes, RX={rx_bytes} bytes")
+            
+        except Exception as e:
+            logger.warning(f"解析流量统计失败: {e}")
+        
+        return {
+            'tx_bytes': tx_bytes,
+            'rx_bytes': rx_bytes
+        }
