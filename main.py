@@ -1,8 +1,9 @@
-"""
+"""  
 主程序入口 - Fluent Design 风格
 """
 import sys
 import os
+import ctypes
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import Qt, QTimer, QEventLoop, QSize
 from PyQt5.QtGui import QIcon
@@ -16,9 +17,56 @@ QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPo
 QApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
 QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)
 
+def is_admin():
+    """检查是否以管理员权限运行"""
+    try:
+        return ctypes.windll.shell32.IsUserAnAdmin()
+    except:
+        return False
+
+def run_as_admin():
+    """请求管理员权限重新启动程序"""
+    try:
+        if sys.platform == 'win32':
+            # 获取当前脚本路径
+            script = os.path.abspath(sys.argv[0])
+            params = ' '.join([script] + sys.argv[1:])
+            
+            # 使用 ShellExecute 以管理员权限运行
+            ret = ctypes.windll.shell32.ShellExecuteW(
+                None, 
+                "runas",  # 以管理员身份运行
+                sys.executable,  # python.exe
+                params,  # 脚本和参数
+                None,
+                1  # SW_SHOWNORMAL
+            )
+            
+            if ret > 32:  # 成功
+                logger.info("已请求管理员权限，当前进程退出")
+                sys.exit(0)
+            else:
+                logger.error(f"请求管理员权限失败，错误代码: {ret}")
+                return False
+        return True
+    except Exception as e:
+        logger.error(f"请求管理员权限时出错: {e}")
+        return False
+
 def main():
     """主函数"""
     try:
+        # 检查管理员权限（TUN模式必需）
+        if not is_admin():
+            logger.warning("程序需要管理员权限以创建TUN虚拟网卡")
+            logger.info("正在请求管理员权限...")
+            if not run_as_admin():
+                logger.error("无法获取管理员权限，程序退出")
+                sys.exit(1)
+            return  # 新进程会重新启动，当前进程退出
+        
+        logger.info("✅ 已以管理员权限运行")
+        
         # 初始化配置目录
         Config.init_dirs()
         
