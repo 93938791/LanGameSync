@@ -2,14 +2,17 @@
 存档同步界面
 展示Syncthing同步目录列表和状态
 """
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QTableWidgetItem
 from PyQt5.QtGui import QColor
 from qfluentwidgets import (
     ScrollArea, CardWidget, BodyLabel, SubtitleLabel,
     PushButton, PrimaryPushButton, TableWidget, InfoBar, InfoBarPosition
 )
+import requests
+
 from utils.logger import Logger
+from config import Config
 
 logger = Logger().get_logger("SyncInterface")
 
@@ -20,6 +23,11 @@ class SyncInterface(ScrollArea):
     def __init__(self, parent_window):
         super().__init__()
         self.parent_window = parent_window
+        
+        # 创建自动刷新定时器（每5秒刷新一次）
+        self.auto_refresh_timer = QTimer(self)
+        self.auto_refresh_timer.timeout.connect(self._auto_refresh)
+        self.auto_refresh_timer.setInterval(5000)  # 5秒
         
         # 设置滚动区域样式
         self.setObjectName("syncInterface")
@@ -488,7 +496,7 @@ class SyncInterface(ScrollArea):
             logger.error(f"刷新设备列表失败: {e}")
     
     def showEvent(self, event):
-        """页面显示事件：进入页面时发现设备"""
+        """页面显示事件：进入页面时发现设备并启动自动刷新"""
         super().showEvent(event)
         logger.info("进入存档同步页面，开始发现设备...")
         
@@ -498,12 +506,32 @@ class SyncInterface(ScrollArea):
         # 启动设备发现（只发现一次）
         if hasattr(self.parent_window, 'is_connected') and self.parent_window.is_connected:
             self._discover_devices_once()
+        
+        # 启动自动刷新定时器
+        self.auto_refresh_timer.start()
+        logger.info("已启动自动刷新，每5秒刷新一次")
     
     def hideEvent(self, event):
-        """页面隐藏事件：离开页面时停止扫描"""
+        """页面隐藏事件：离开页面时停止自动刷新"""
         super().hideEvent(event)
         logger.info("离开存档同步页面")
-        # 暂时不需要停止任何东西，因为只是发现一次
+        
+        # 停止自动刷新
+        self.auto_refresh_timer.stop()
+        logger.info("已停止自动刷新")
+    
+    def _auto_refresh(self):
+        """自动刷新（静默刷新，不显示提示）"""
+        try:
+            if not hasattr(self.parent_window, 'syncthing_manager') or not self.parent_window.syncthing_manager:
+                return
+            
+            # 静默刷新文件夹和设备列表
+            self.refresh_folders()
+            self.refresh_devices()
+                
+        except Exception as e:
+            logger.error(f"自动刷新失败: {e}")
     
     def _discover_devices_once(self):
         """发现设备（只执行一次）"""
