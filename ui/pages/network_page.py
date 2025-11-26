@@ -649,7 +649,12 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
                         
                         if device_id and device_id != my_syncthing_id:
                             # 添加设备到Syncthing（如果已存在则返回None）
-                            result = self.parent_window.syncthing_manager.add_device(device_id, hostname)
+                            # 传递虚拟IP地址，使Syncthing可以通过虚拟网络连接
+                            result = self.parent_window.syncthing_manager.add_device(
+                                device_id=device_id,
+                                device_name=hostname,
+                                device_address=ipv4  # 传递虚拟IP
+                            )
                             # 只有真正添加了新设备时才执行后续操作
                             if result is True:
                                 logger.info(f"自动发现并添加设备: {hostname} ({device_id[:7]}...) - {ipv4}")

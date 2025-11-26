@@ -172,12 +172,13 @@ class SyncthingManager:
         else:
             return _do_set_config()
     
-    def add_device(self, device_id, device_name=None, async_mode=True):
+    def add_device(self, device_id, device_name=None, device_address=None, async_mode=True):
         """添加远程设备
         
         Args:
             device_id: 设备ID
             device_name: 设备名称
+            device_address: 设备地址（虚拟IP），例如 "tcp://10.126.126.2:22000"
             async_mode: 是否异步执行（默认True，避免阻塞主程序）
             
         Returns:
@@ -193,11 +194,20 @@ class SyncthingManager:
                 logger.debug(f"设备已存在: {device_id}")
                 return None  # 返回None表示设备已存在，无需重复添加
         
+        # 构造设备地址列表
+        addresses = ["dynamic"]  # 默认使用动态发现
+        if device_address:
+            # 如果提供了虚拟IP，添加到地址列表前面（优先使用）
+            # Syncthing 默认端口是 22000
+            tcp_address = f"tcp://{device_address}:22000"
+            addresses = [tcp_address, "dynamic"]
+            logger.info(f"使用虚拟IP地址: {tcp_address}")
+        
         # 添加新设备
         new_device = {
             "deviceID": device_id,
             "name": device_name or device_id[:7],
-            "addresses": ["dynamic"],
+            "addresses": addresses,
             "compression": "metadata",
             "introducer": False,
             "skipIntroductionRemovals": False,
@@ -205,7 +215,7 @@ class SyncthingManager:
         }
         
         config["devices"].append(new_device)
-        logger.info(f"添加新设备: {device_name or device_id[:7]} ({device_id[:7]}...)")
+        logger.info(f"添加新设备: {device_name or device_id[:7]} ({device_id[:7]}...) 地址: {addresses}")
         
         return self.set_config(config, async_mode=async_mode)
     
