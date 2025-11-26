@@ -314,57 +314,84 @@ class SyncthingManager:
             async_mode: 是否异步执行（默认True，避免阻塞主程序）
             
         Returns:
-            bool: True-新增成功, False-失败, None-设备已存在
+            bool: True-新增成功或更新成功, False-失败, None-设备已存在且无需更新
         """
         config = self.get_config()
         if not config:
             return False
         
         # 检查设备是否已存在
+        device_exists = False
         for device in config.get("devices", []):
             if device["deviceID"] == device_id:
+                device_exists = True
                 logger.debug(f"设备已存在: {device_id}")
-                return None  # 返回None表示设备已存在，无需重复添加
-        
-        # 为远程设备创建端口转发（通过SOCKS5代理访问虚拟IP）
-        addresses = ["dynamic"]  # 默认使用dynamic
-        
-        if device_address:
-            # 分配一个本地转发端口
-            local_port = self.next_forward_port
-            self.next_forward_port += 1
-            
-            # 启动端口转发：127.0.0.1:local_port → SOCKS5 → 虚拟IP:22000
-            if self.socks5_forwarder.start_forward(local_port, device_address, 22000):
-                # 记录设备ID和转发端口的映射
-                self.device_forward_ports[device_id] = local_port
                 
-                # 使用本地转发地址
-                tcp_address = f"tcp://127.0.0.1:{local_port}"
-                addresses = [tcp_address]  # 只使用转发地址
-                logger.info(f"使用SOCKS5转发: {tcp_address} → {device_address}:22000")
+                # 即使设备已存在，也要检查是否需要创建端口转发
+                if device_address and device_id not in self.device_forward_ports:
+                    # 设备存在但没有端口转发，需要创建
+                    local_port = self.next_forward_port
+                    self.next_forward_port += 1
+                    
+                    # 启动端口转发：127.0.0.1:local_port → SOCKS5 → 虚拟IP:22000
+                    if self.socks5_forwarder.start_forward(local_port, device_address, 22000):
+                        # 记录设备ID和转发端口的映射
+                        self.device_forward_ports[device_id] = local_port
+                        
+                        # 更新设备地址为本地转发地址
+                        tcp_address = f"tcp://127.0.0.1:{local_port}"
+                        device["addresses"] = [tcp_address]
+                        logger.info(f"为已存在设备创建SOCKS5转发: {tcp_address} → {device_address}:22000")
+                        
+                        # 保存配置
+                        return self.set_config(config, async_mode=async_mode)
+                    else:
+                        logger.warning(f"启动端口转发失败（设备已存在）")
+                
+                # 设备已存在且已有端口转发，无需操作
+                return None
+        
+        # 设备不存在，需要添加
+        if not device_exists:
+            # 为远程设备创建端口转发（通过SOCKS5代理访问虚拟IP）
+            addresses = ["dynamic"]  # 默认使用dynamic
+            
+            if device_address:
+                # 分配一个本地转发端口
+                local_port = self.next_forward_port
+                self.next_forward_port += 1
+                
+                # 启动端口转发：127.0.0.1:local_port → SOCKS5 → 虚拟IP:22000
+                if self.socks5_forwarder.start_forward(local_port, device_address, 22000):
+                    # 记录设备ID和转发端口的映射
+                    self.device_forward_ports[device_id] = local_port
+                    
+                    # 使用本地转发地址
+                    tcp_address = f"tcp://127.0.0.1:{local_port}"
+                    addresses = [tcp_address]  # 只使用转发地址
+                    logger.info(f"使用SOCKS5转发: {tcp_address} → {device_address}:22000")
+                else:
+                    logger.warning(f"启动端口转发失败，使用dynamic发现")
             else:
-                logger.warning(f"启动端口转发失败，使用dynamic发现")
-        else:
-            logger.warning("未提供虚拟IP地址，使用dynamic发现")
-        
-        # 添加新设备
-        new_device = {
-            "deviceID": device_id,
-            "name": device_name or device_id[:7],
-            "addresses": addresses,
-            "compression": "metadata",
-            "introducer": False,
-            "skipIntroductionRemovals": False,
-            "paused": False,
-            # 自动接受共享文件夹（多客户端同步必需）
-            "autoAcceptFolders": True
-        }
-        
-        config["devices"].append(new_device)
-        logger.info(f"添加新设备: {device_name or device_id[:7]} ({device_id[:7]}...) 地址: {addresses}")
-        
-        return self.set_config(config, async_mode=async_mode)
+                logger.warning("未提供虚拟IP地址，使用dynamic发现")
+            
+            # 添加新设备
+            new_device = {
+                "deviceID": device_id,
+                "name": device_name or device_id[:7],
+                "addresses": addresses,
+                "compression": "metadata",
+                "introducer": False,
+                "skipIntroductionRemovals": False,
+                "paused": False,
+                # 自动接受共享文件夹（多客户端同步必需）
+                "autoAcceptFolders": True
+            }
+            
+            config["devices"].append(new_device)
+            logger.info(f"添加新设备: {device_name or device_id[:7]} ({device_id[:7]}...) 地址: {addresses}")
+            
+            return self.set_config(config, async_mode=async_mode)
     
     def set_device_name(self, device_id, name):
         """
