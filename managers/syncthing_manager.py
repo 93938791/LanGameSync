@@ -102,7 +102,7 @@ class SyncthingManager:
         return True
     
     def stop(self):
-        """停止Syncthing服务"""
+        """停止Syncthing服务（异步操作，不阻塞）"""
         # 停止所有端口转发
         try:
             self.socks5_forwarder.stop_all()
@@ -112,23 +112,20 @@ class SyncthingManager:
         # 停止事件监听
         self.stop_event_listener()
         
-        # 先尝试通过API优雅地关闭Syncthing
+        # 先尝试通过API优雅地关闭Syncthing（不等待）
         try:
             logger.info("尝试通过API关闭Syncthing...")
             resp = requests.post(
                 f"{self.api_url}/rest/system/shutdown",
                 headers=self.headers,
-                timeout=5
+                timeout=2  # 缩短超时时间
             )
             if resp.status_code == 200:
-                logger.info("Syncthing API关闭请求已发送")
-                # 等待进程结束
-                import time
-                time.sleep(2)
+                logger.info("✅ Syncthing API关闭请求已发送")
         except Exception as e:
             logger.warning(f"API关闭失败，将强制结束进程: {e}")
         
-        # 强制结束进程
+        # 强制结束进程（立即执行，不等待）
         if self.process:
             ProcessHelper.kill_process(self.process)
             self.process = None
@@ -136,7 +133,7 @@ class SyncthingManager:
         # 杀死所有占用端口的进程（确保彻底清理）
         ProcessHelper.kill_by_port(Config.SYNCTHING_API_PORT)
         
-        logger.info("Syncthing已停止")
+        logger.info("✅ Syncthing已停止")
     
     def get_device_id(self):
         """获取本机设备ID"""
@@ -623,7 +620,7 @@ class SyncthingManager:
             logger.error(f"获取设备名称失败: {e}")
             return ''
     
-    def add_folder(self, folder_path, folder_id=None, folder_label=None, devices=None, watcher_delay=30, paused=True, async_mode=True):
+    def add_folder(self, folder_path, folder_id=None, folder_label=None, devices=None, watcher_delay=10, paused=True, async_mode=True):
         """
         添加同步文件夹
         
@@ -709,7 +706,7 @@ class SyncthingManager:
         
         return self.set_config(config, async_mode=async_mode)
     
-    def setup_sync_folder(self, folder_id, folder_path, folder_label, watcher_delay=30):
+    def setup_sync_folder(self, folder_id, folder_path, folder_label, watcher_delay=10):
         """
         配置同步文件夹(包含所有已连接设备)
         

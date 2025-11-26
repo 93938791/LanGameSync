@@ -199,37 +199,79 @@ Syncthing事件回调(收到同步事件时自动调用)
             logger.error(f"重置同步状态失败: {e}")
     
     def closeEvent(self, event):
-        """窗口关闭事件 - 断开网络和停止Syncthing"""
+        """窗口关闭事件 - 异步清理资源，不阻塞主程序"""
         try:
             logger.info("正在关闭程序...")
             
-            # 1. 断开UDP广播
-            if hasattr(self, 'udp_broadcast') and self.udp_broadcast:
-                logger.info("正在关闭UDP广播...")
-                self.udp_broadcast.disconnect()
-                self.udp_broadcast = None
+            # 立即接受关闭事件，关闭窗口界面
+            event.accept()
             
-            # 2. 停止Syncthing
-            if hasattr(self, 'syncthing_manager') and self.syncthing_manager:
-                logger.info("正在停止Syncthing...")
-                self.syncthing_manager.stop()
-                self.syncthing_manager = None
-            
-            # 3. 断开EasyTier网络
-            if hasattr(self, 'controller') and self.controller:
-                if hasattr(self.controller, 'easytier') and self.controller.easytier:
-                    logger.info("正在断开EasyTier网络...")
-                    self.controller.easytier.stop()
-            
-            # 4. 重置连接状态
+            # 重置连接状态（立即生效）
             self.is_connected = False
             
-            logger.info("程序关闭清理完成")
+            # 停止所有定时器（立即生效）
+            if hasattr(self, 'network_interface'):
+                if hasattr(self.network_interface, 'traffic_timer') and self.network_interface.traffic_timer.isActive():
+                    self.network_interface.traffic_timer.stop()
+                if hasattr(self.network_interface, 'device_refresh_timer') and self.network_interface.device_refresh_timer.isActive():
+                    self.network_interface.device_refresh_timer.stop()
+            
+            if hasattr(self, 'sync_interface'):
+                if hasattr(self.sync_interface, 'auto_refresh_timer') and self.sync_interface.auto_refresh_timer.isActive():
+                    self.sync_interface.auto_refresh_timer.stop()
+            
+            # 在独立线程中执行清理操作（不阻塞主程序）
+            import threading
+            
+            def cleanup_resources():
+                """异步清理资源（在独立线程中执行）"""
+                try:
+                    logger.info("开始异步清理资源...")
+                    
+                    # 1. 断开UDP广播
+                    if hasattr(self, 'udp_broadcast') and self.udp_broadcast:
+                        try:
+                            logger.info("正在关闭UDP广播...")
+                            self.udp_broadcast.disconnect()
+                            self.udp_broadcast = None
+                            logger.info("UDP广播已关闭")
+                        except Exception as e:
+                            logger.error(f"关闭UDP广播失败: {e}")
+                    
+                    # 2. 停止Syncthing（最耗时的操作）
+                    if hasattr(self, 'syncthing_manager') and self.syncthing_manager:
+                        try:
+                            logger.info("正在停止Syncthing...")
+                            self.syncthing_manager.stop()
+                            self.syncthing_manager = None
+                            logger.info("Syncthing已停止")
+                        except Exception as e:
+                            logger.error(f"停止Syncthing失败: {e}")
+                    
+                    # 3. 断开EasyTier网络
+                    if hasattr(self, 'controller') and self.controller:
+                        if hasattr(self.controller, 'easytier') and self.controller.easytier:
+                            try:
+                                logger.info("正在断开EasyTier网络...")
+                                self.controller.easytier.stop()
+                                logger.info("EasyTier网络已断开")
+                            except Exception as e:
+                                logger.error(f"断开EasyTier失败: {e}")
+                    
+                    logger.info("✅ 异步清理资源完成")
+                    
+                except Exception as e:
+                    logger.error(f"异步清理资源失败: {e}")
+            
+            # 启动清理线程（daemon=True 确保主程序退出时自动结束）
+            cleanup_thread = threading.Thread(target=cleanup_resources, daemon=True, name="CleanupThread")
+            cleanup_thread.start()
+            
+            logger.info("✅ 窗口已关闭，资源清理在后台进行中...")
             
         except Exception as e:
-            logger.error(f"关闭程序时清理失败: {e}")
-        finally:
-            # 接受关闭事件
+            logger.error(f"关闭程序时出错: {e}")
+            # 确保窗口能关闭
             event.accept()
 
 
