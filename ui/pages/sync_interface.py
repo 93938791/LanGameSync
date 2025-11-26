@@ -287,7 +287,7 @@ class SyncInterface(ScrollArea):
             )
     
     def refresh_sync(self):
-        """刷新同步列表和设备列表"""
+        """刷新同步列表和设备列表（异步执行，不阻塞界面）"""
         try:
             if not hasattr(self.parent_window, 'syncthing_manager') or not self.parent_window.syncthing_manager:
                 InfoBar.warning(
@@ -301,14 +301,22 @@ class SyncInterface(ScrollArea):
                 )
                 return
             
-            # 更新设备地址（用于设备IP变化后重新配置）
-            self._update_device_addresses()
+            # 在后台线程中执行刷新，不阻塞UI
+            import threading
+            def refresh_thread():
+                try:
+                    # 更新设备地址（用于设备IP变化后重新配置）
+                    self._update_device_addresses()
+                    
+                    # 刷新同步文件夹列表
+                    self.refresh_folders()
+                    
+                    # 刷新设备列表
+                    self.refresh_devices()
+                except Exception as e:
+                    logger.error(f"后台刷新失败: {e}")
             
-            # 刷新同步文件夹列表
-            self.refresh_folders()
-            
-            # 刷新设备列表
-            self.refresh_devices()
+            threading.Thread(target=refresh_thread, daemon=True, name="SyncRefreshThread").start()
             
         except Exception as e:
             logger.error(f"刷新失败: {e}")
@@ -561,14 +569,22 @@ class SyncInterface(ScrollArea):
         logger.info("已停止自动刷新")
     
     def _auto_refresh(self):
-        """自动刷新（静默刷新，不显示提示）"""
+        """自动刷新（静默刷新，不显示提示，异步执行）"""
         try:
             if not hasattr(self.parent_window, 'syncthing_manager') or not self.parent_window.syncthing_manager:
                 return
             
-            # 静默刷新文件夹和设备列表
-            self.refresh_folders()
-            self.refresh_devices()
+            # 在后台线程中执行，不阻塞UI
+            import threading
+            def auto_refresh_thread():
+                try:
+                    # 静默刷新文件夹和设备列表
+                    self.refresh_folders()
+                    self.refresh_devices()
+                except Exception as e:
+                    logger.error(f"后台自动刷新失败: {e}")
+            
+            threading.Thread(target=auto_refresh_thread, daemon=True, name="AutoRefreshThread").start()
                 
         except Exception as e:
             logger.error(f"自动刷新失败: {e}")
