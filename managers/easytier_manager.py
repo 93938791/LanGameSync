@@ -50,11 +50,15 @@ class EasytierManager:
         else:
             peers_to_use = custom_peers
         
+        # 使用固定的TUN设备名称（基于主机名，避免每次创建新设备）
+        tun_device_name = f"easytier-{Config.HOSTNAME}"
+        
         args = [
             "--rpc-portal", "127.0.0.1:15888",  # 显式指定 RPC 端口，供 easytier-cli 连接
             "-d",
             "--network-name", net_name,
-            "--network-secret", net_secret
+            "--network-secret", net_secret,
+            "--dev-name", tun_device_name  # 固定TUN设备名称
         ]
         
         # 添加节点
@@ -68,9 +72,9 @@ class EasytierManager:
             args.extend(["-p", peer])
         
         if peers_list:
-            logger.info(f"启动Easytier虚拟网络（使用节点：{len(peers_list)}个）...")
+            logger.info(f"启动Easytier虚拟网络（使用节点：{len(peers_list)}个，TUN设备：{tun_device_name}）...")
         else:
-            logger.info("启动Easytier虚拟网络（不使用节点，局域网模式）...")
+            logger.info(f"启动Easytier虚拟网络（不使用节点，局域网模式，TUN设备：{tun_device_name}）...")
         
         # 启动进程（TUN模式需要管理员权限）
         logger.info("ℹ️ TUN模式需要管理员权限来创建虚拟网卡...")
