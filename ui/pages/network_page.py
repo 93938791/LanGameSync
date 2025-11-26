@@ -58,6 +58,14 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
         # 创建内容
         self.create_content(main_layout)
     
+    def showEvent(self, event):
+        """页面显示事件：切回页面时刷新设备列表"""
+        super().showEvent(event)
+        # 如果已连接，刷新设备列表
+        if hasattr(self.parent_window, 'is_connected') and self.parent_window.is_connected:
+            logger.info("切回联机设置页面，刷新设备列表...")
+            self.update_clients_list()
+    
     def create_content(self, main_layout):
         """创建内容 - 流式布局"""
         
@@ -642,15 +650,10 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
                 # 获取对等设备列表
                 peers = self.parent_window.controller.easytier.discover_peers(timeout=1)
                 
-                # 如果获取失败或为空，保留当前显示（避免闪烁）
-                if not peers:
-                    logger.debug("未发现对等设备，保留当前显示")
-                    return
-                
                 # 收集设备信息
                 devices = []
                 
-                # 添加本机
+                # 添加本机（总是显示）
                 my_ip = self.parent_window.controller.easytier.virtual_ip or "unknown"
                 devices.append({
                     "name": "本机",
@@ -658,66 +661,70 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
                     "is_self": True
                 })
                 
-                # 获取当前Syncthing连接状态
-                connections = self.parent_window.syncthing_manager.get_connections()
-                connected_device_ids = set()
-                if connections and connections.get('connections'):
-                    for dev_id, conn_info in connections['connections'].items():
-                        if conn_info.get('connected'):
-                            connected_device_ids.add(dev_id)
-                
-                # 添加其他设备（过滤掉本机）
-                seen_ips = set([my_ip])
-                
-                for peer in peers:
-                    ipv4 = peer.get('ipv4', '')
-                    hostname = peer.get('hostname', 'Unknown')
+                # 如果有对等设备，处理它们
+                if peers:
+                    # 获取当前Syncthing连接状态
+                    connections = self.parent_window.syncthing_manager.get_connections()
+                    connected_device_ids = set()
+                    if connections and connections.get('connections'):
+                        for dev_id, conn_info in connections['connections'].items():
+                            if conn_info.get('connected'):
+                                connected_device_ids.add(dev_id)
                     
-                    # 过滤掉本机（通过IP和hostname双重检查）
-                    if ipv4 and ipv4 not in seen_ips and hostname != Config.HOSTNAME:
-                        # 尝试获取远程设备的Syncthing ID
-                        device_id = self._get_remote_syncthing_id(ipv4)
-                        if device_id and device_id != self.parent_window.syncthing_manager.device_id:
-                            # 添加设备到Syncthing（如果已存在则返回None）
-                            # 传递虚拟IP地址，使Syncthing可以通过虚拟网络连接
-                            result = self.parent_window.syncthing_manager.add_device(
-                                device_id=device_id,
-                                device_name=hostname,
-                                device_address=ipv4  # 传递虚拟IP
-                            )
-                            # 只有新增成功时才打印日志（None表示已存在）
-                            if result is True:
-                                logger.info(f"自动发现并添加设备: {hostname} ({device_id[:7]}...) - {ipv4}")
-                                # 将设备添加到所有正在同步的文件夹
-                                self._add_device_to_active_folders(device_id)
-                            # 如果设备已存在但未连接，触发重连
-                            elif result is None and device_id not in connected_device_ids:
-                                # 日志去重：只有距离上次日志超过30秒才输出
-                                import time
-                                current_time = time.time()
-                                last_log_time = self.last_reconnect_log_time.get(device_id, 0)
-                                if current_time - last_log_time > 30:  # 30秒内不重复输出
-                                    logger.info(f"🔄 设备 {hostname} ({device_id[:7]}...) 已上线但未连接，触发重连...")
-                                    self.last_reconnect_log_time[device_id] = current_time
-                                self.parent_window.syncthing_manager._restart_device_connection(device_id)
+                    # 添加其他设备（过滤掉本机）
+                    seen_ips = set([my_ip])
+                    
+                    for peer in peers:
+                        ipv4 = peer.get('ipv4', '')
+                        hostname = peer.get('hostname', 'Unknown')
                         
-                        # 获取延迟（如果有）
-                        latency_str = peer.get('latency', '0ms')
-                        latency = 0
-                        if latency_str and latency_str != '-':
-                            try:
-                                latency = int(latency_str.replace('ms', '').strip())
-                            except:
-                                latency = 0
-                        
-                        devices.append({
-                            "name": hostname,
-                            "ip": ipv4,
-                            "is_self": False,
-                            "latency": latency
-                        })
-                        
-                        seen_ips.add(ipv4)
+                        # 过滤掉本机（通过IP和hostname双重检查）
+                        if ipv4 and ipv4 not in seen_ips and hostname != Config.HOSTNAME:
+                            # 尝试获取远程设备的Syncthing ID
+                            device_id = self._get_remote_syncthing_id(ipv4)
+                            if device_id and device_id != self.parent_window.syncthing_manager.device_id:
+                                # 添加设备到Syncthing（如果已存在则返回None）
+                                # 传递虚拟IP地址，使Syncthing可以通过虚拟网络连接
+                                result = self.parent_window.syncthing_manager.add_device(
+                                    device_id=device_id,
+                                    device_name=hostname,
+                                    device_address=ipv4  # 传递虚拟IP
+                                )
+                                # 只有新增成功时才打印日志（None表示已存在）
+                                if result is True:
+                                    logger.info(f"自动发现并添加设备: {hostname} ({device_id[:7]}...) - {ipv4}")
+                                    # 将设备添加到所有正在同步的文件夹
+                                    self._add_device_to_active_folders(device_id)
+                                # 如果设备已存在但未连接，触发重连
+                                elif result is None and device_id not in connected_device_ids:
+                                    # 日志去重：只有距离上次日志超过30秒才输出
+                                    import time
+                                    current_time = time.time()
+                                    last_log_time = self.last_reconnect_log_time.get(device_id, 0)
+                                    if current_time - last_log_time > 30:  # 30秒内不重复输出
+                                        logger.info(f"🔄 设备 {hostname} ({device_id[:7]}...) 已上线但未连接，触发重连...")
+                                        self.last_reconnect_log_time[device_id] = current_time
+                                    self.parent_window.syncthing_manager._restart_device_connection(device_id)
+                            
+                            # 获取延迟（如果有）
+                            latency_str = peer.get('latency', '0ms')
+                            latency = 0
+                            if latency_str and latency_str != '-':
+                                try:
+                                    latency = int(latency_str.replace('ms', '').strip())
+                                except:
+                                    latency = 0
+                            
+                            devices.append({
+                                "name": hostname,
+                                "ip": ipv4,
+                                "is_self": False,
+                                "latency": latency
+                            })
+                            
+                            seen_ips.add(ipv4)
+                else:
+                    logger.debug("未发现对等设备，仅显示本机")
                 
                 # 在主线程中更新UI
                 from PyQt5.QtCore import QMetaObject, Qt
