@@ -1800,6 +1800,7 @@ class GameInterface(QWidget):
                         QTimer.singleShot(0, lambda: self.join_game_btn.setEnabled(True))
                         QTimer.singleShot(0, lambda: self.join_game_btn.setText("加入游戏"))
                         QTimer.singleShot(0, lambda: self.join_game_btn.setVisible(True))
+                        QTimer.singleShot(0, lambda: self.close_game_btn.setVisible(False))
                         
                         QMetaObject.invokeMethod(
                             self,
@@ -1813,14 +1814,19 @@ class GameInterface(QWidget):
                     import traceback
                     logger.error(traceback.format_exc())
                     
+                    # 恢复按钮状态
+                    from PyQt5.QtCore import QTimer
+                    QTimer.singleShot(0, lambda: self.join_game_btn.setEnabled(True))
+                    QTimer.singleShot(0, lambda: self.join_game_btn.setText("加入游戏"))
+                    QTimer.singleShot(0, lambda: self.join_game_btn.setVisible(True))
+                    QTimer.singleShot(0, lambda: self.close_game_btn.setVisible(False))
+                    
                     QMetaObject.invokeMethod(
                         self,
                         "_show_error_message",
                         Qt.QueuedConnection,
                         Q_ARG(str, f"加入失败: {str(e)}")
                     )
-                finally:
-                    pass  # 按钮状态已在 success/error 分支中处理
             
             threading.Thread(target=join_thread, daemon=True).start()
             
