@@ -641,20 +641,26 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
     def update_clients_list(self):
         """更新客户端列表（显示在设备卡片中）——异步版本，不阻塞UI"""
         if not self.parent_window.is_connected:
+            logger.debug("未连接到网络，跳过更新设备列表")
             return
+        
+        logger.info("开始更新客户端列表...")
         
         # 在后台线程中执行，不阻塞UI
         import threading
         def update_thread():
             try:
                 # 获取对等设备列表
+                logger.debug("正在发现对等设备...")
                 peers = self.parent_window.controller.easytier.discover_peers(timeout=1)
+                logger.debug(f"发现对等设备: {peers}")
                 
                 # 收集设备信息
                 devices = []
                 
                 # 添加本机（总是显示）
                 my_ip = self.parent_window.controller.easytier.virtual_ip or "unknown"
+                logger.info(f"本机虚拟IP: {my_ip}")
                 devices.append({
                     "name": "本机",
                     "ip": my_ip,
@@ -730,14 +736,18 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
                 from PyQt5.QtCore import QTimer
                 def update_ui():
                     try:
+                        logger.debug(f"准备更新UI，设备数量: {len(devices)}")
+                        
                         # 更新设备卡片（动态添加/删除）
                         # 先清空现有设备
                         for widget in self.device_widgets:
                             widget.deleteLater()
                         self.device_widgets.clear()
+                        logger.debug("已清空现有设备卡片")
                         
                         # 动态添加设备卡片
                         for device in devices:
+                            logger.debug(f"添加设备卡片: {device['name']} - {device['ip']}")
                             device_card = self.create_single_device_card(
                                 device_name=device["name"],
                                 device_ip=device["ip"],
@@ -747,11 +757,14 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
                             self.devices_layout.addWidget(device_card)
                             self.device_widgets.append(device_card)
                         
-                        logger.info(f"更新客户端列表: 总计 {len(devices)} 台设备")
+                        logger.info(f"✅ 设备列表更新完成: 总计 {len(devices)} 台设备")
                     except Exception as e:
                         logger.error(f"更新UI失败: {e}")
+                        import traceback
+                        logger.error(traceback.format_exc())
                 
                 # 使用QTimer.singleShot在主线程执行
+                logger.debug("准备在主线程更新UI...")
                 QTimer.singleShot(0, update_ui)
                 
             except Exception as e:
