@@ -319,8 +319,8 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
         device.setFixedSize(140, 140)  # 正方形
         
         layout = QVBoxLayout(device)
-        layout.setContentsMargins(10, 8, 10, 8)  # 调整边距
-        layout.setSpacing(6)  # 调整间距
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(2)  # 减小元素间距
         layout.setAlignment(Qt.AlignTop)  # 从顶部开始布局
         
         # 状态图标（根据延迟显示不同图片）
@@ -362,6 +362,9 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
             icon_label.setStyleSheet("font-size: 52px;")
         
         layout.addWidget(icon_label, 0, Qt.AlignCenter)
+        
+        # 添加一个小的间隔，让设备名和图标分开
+        layout.addSpacing(8)
         
         # 设备名（支持滚动显示，固定高度）
         name_color = "#0078d4" if is_self else "#107c10"

@@ -91,8 +91,8 @@ def main():
         splash.setWindowFlags(Qt.SplashScreen | Qt.FramelessWindowHint)
         
         # 设置启动页面固定尺寸（与主窗口保持一致）
-        # 主窗口尺寸在 FluentMainWindow.init_window() 中设置为 1120x700
-        splash_width = 1120
+        # 主窗口尺寸在 FluentMainWindow.init_window() 中设置为 1200x700
+        splash_width = 1200
         splash_height = 700
         splash.setFixedSize(splash_width, splash_height)
         

@@ -8,7 +8,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QIcon
 from qfluentwidgets import (
-    FluentWindow, NavigationItemPosition, FluentIcon, 
+    MSFluentWindow, NavigationItemPosition, FluentIcon, 
     setTheme, Theme, setThemeColor
 )
 
@@ -22,8 +22,8 @@ from ui.pages import NetworkInterface, GameInterface, SettingsInterface, Message
 logger = Logger().get_logger("FluentMainWindow")
 
 
-class FluentMainWindow(FluentWindow):
-    """Fluent Design 风格主窗口"""
+class FluentMainWindow(MSFluentWindow):
+    """微软风格流畅窗口"""
     
     def __init__(self):
         super().__init__()
@@ -61,18 +61,20 @@ class FluentMainWindow(FluentWindow):
         """初始化窗口"""
         self.setWindowTitle(f"{Config.APP_NAME}")
         
-        # 设置固定尺寸（横向长方形窗口，宽度足够放下三个卡片）
-        fixed_width = 1120
+        # 设置固定尺寸（更宽，更矮）
+        fixed_width = 1200
         fixed_height = 700
         self.setFixedSize(fixed_width, fixed_height)
         
         # 禁用最大化按钮
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowMaximizeButtonHint)
         
-        # 不设置窗口图标（去掉logo）
-        # icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'resources', 'logo.ico')
-        # if os.path.exists(icon_path):
-        #     self.setWindowIcon(QIcon(icon_path))
+        # 设置窗口图标（logo）
+        icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'resource', 'logo.ico')
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
+        else:
+            logger.warning(f"Logo文件不存在: {icon_path}")
         
         # 移动到屏幕中央
         desktop = QApplication.desktop().availableGeometry()
@@ -124,11 +126,54 @@ class FluentMainWindow(FluentWindow):
             position=NavigationItemPosition.BOTTOM
         )
         
+        # 隐藏导航栏展开/收起按钮
+        # 方法1: 设置导航栏不可折叠
+        try:
+            # 查找并隐藏折叠按钮
+            if hasattr(self.navigationInterface, 'toggleButton'):
+                self.navigationInterface.toggleButton.hide()
+            # 或者设置为固定宽度，不允许折叠
+            if hasattr(self.navigationInterface, 'setMinimumExpandWidth'):
+                self.navigationInterface.setMinimumExpandWidth(200)
+        except Exception as e:
+            logger.warning(f"隐藏导航栏按钮失败: {e}")
+        
         # 设置默认页面
         self.switchTo(self.network_interface)
         
+        # 隐藏导航栏按钮（延迟执行确保UI已初始化）
+        from PyQt5.QtCore import QTimer
+        QTimer.singleShot(100, self._hide_navigation_buttons)
+        
         # 启动时自动暂停所有同步文件夹
         self._pause_all_folders_on_startup()
+    
+    def _hide_navigation_buttons(self):
+        """隐藏导航栏按钮"""
+        try:
+            # 查找并隐藏导航栏中的所有按钮
+            from PyQt5.QtWidgets import QPushButton
+            
+            # 隐藏 toggleButton（展开/收起按钮）
+            for child in self.navigationInterface.children():
+                if isinstance(child, QPushButton):
+                    # 检查是否是折叠按钮
+                    if hasattr(child, 'objectName') and 'toggle' in child.objectName().lower():
+                        child.hide()
+                        logger.info("已隐藏导航栏折叠按钮")
+            
+            # 尝试直接访问 toggleButton 属性
+            if hasattr(self.navigationInterface, 'toggleButton'):
+                self.navigationInterface.toggleButton.hide()
+                logger.info("已隐藏 toggleButton")
+                
+            # 尝试访问 menuButton
+            if hasattr(self.navigationInterface, 'menuButton'):
+                self.navigationInterface.menuButton.hide()
+                logger.info("已隐藏 menuButton")
+                
+        except Exception as e:
+            logger.warning(f"隐藏导航栏按钮失败: {e}")
     
     def on_syncthing_event(self, event_type, event_data):
         """
