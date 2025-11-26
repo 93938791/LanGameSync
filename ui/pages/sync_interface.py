@@ -2,7 +2,7 @@
 存档同步界面
 展示Syncthing同步目录列表和状态
 """
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, pyqtSlot
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QTableWidgetItem
 from PyQt5.QtGui import QColor
 from qfluentwidgets import (
@@ -287,7 +287,7 @@ class SyncInterface(ScrollArea):
             )
     
     def refresh_sync(self):
-        """刷新同步列表和设备列表（异步执行，不阻塞界面）"""
+        """刷新同步列表和设备列表（异步执行，不阻塞UI）"""
         try:
             if not hasattr(self.parent_window, 'syncthing_manager') or not self.parent_window.syncthing_manager:
                 InfoBar.warning(
@@ -301,18 +301,17 @@ class SyncInterface(ScrollArea):
                 )
                 return
             
-            # 在后台线程中执行刷新，不阻塞UI
+            # 在后台线程中获取数据，然后在主线程更新UI
             import threading
             def refresh_thread():
                 try:
                     # 更新设备地址（用于设备IP变化后重新配置）
                     self._update_device_addresses()
                     
-                    # 刷新同步文件夹列表
-                    self.refresh_folders()
+                    # 在主线程中刷新UI
+                    from PyQt5.QtCore import QMetaObject, Qt
+                    QMetaObject.invokeMethod(self, "_refresh_ui_safe", Qt.QueuedConnection)
                     
-                    # 刷新设备列表
-                    self.refresh_devices()
                 except Exception as e:
                     logger.error(f"后台刷新失败: {e}")
             
@@ -322,6 +321,18 @@ class SyncInterface(ScrollArea):
             logger.error(f"刷新失败: {e}")
             import traceback
             logger.error(traceback.format_exc())
+    
+    @pyqtSlot()
+    def _refresh_ui_safe(self):
+        """线程安全的UI刷新（在主线程中调用）"""
+        try:
+            # 刷新同步文件夹列表
+            self.refresh_folders()
+            
+            # 刷新设备列表
+            self.refresh_devices()
+        except Exception as e:
+            logger.error(f"UI刷新失败: {e}")
     
     def refresh_folders(self):
         """刷新同步文件夹列表"""
@@ -541,19 +552,14 @@ class SyncInterface(ScrollArea):
         super().showEvent(event)
         logger.info("进入存档同步页面，开始发现设备...")
         
-        # 在后台线程中刷新页面显示，避免阻塞主窗口
-        import threading
-        def async_refresh():
-            try:
-                self.refresh_sync()
-                
-                # 启动设备发现（只发现一次）
-                if hasattr(self.parent_window, 'is_connected') and self.parent_window.is_connected:
-                    self._discover_devices_once()
-            except Exception as e:
-                logger.error(f"后台刷新失败: {e}")
+        # 直接调用refresh_sync（它内部已经是异步的）
+        self.refresh_sync()
         
-        threading.Thread(target=async_refresh, daemon=True).start()
+        # 启动设备发现（只发现一次）
+        if hasattr(self.parent_window, 'is_connected') and self.parent_window.is_connected:
+            # 在后台线程中执行设备发现
+            import threading
+            threading.Thread(target=self._discover_devices_once, daemon=True, name="DiscoverDevicesThread").start()
         
         # 启动自动刷新定时器
         self.auto_refresh_timer.start()
@@ -569,22 +575,15 @@ class SyncInterface(ScrollArea):
         logger.info("已停止自动刷新")
     
     def _auto_refresh(self):
-        """自动刷新（静默刷新，不显示提示，异步执行）"""
+        """自动刷新（静默刷新，不显示提示）"""
         try:
             if not hasattr(self.parent_window, 'syncthing_manager') or not self.parent_window.syncthing_manager:
                 return
             
-            # 在后台线程中执行，不阻塞UI
-            import threading
-            def auto_refresh_thread():
-                try:
-                    # 静默刷新文件夹和设备列表
-                    self.refresh_folders()
-                    self.refresh_devices()
-                except Exception as e:
-                    logger.error(f"后台自动刷新失败: {e}")
-            
-            threading.Thread(target=auto_refresh_thread, daemon=True, name="AutoRefreshThread").start()
+            # 定时器刷新可以直接在主线程（请求很快）
+            # 如果卡顿，说明Syncthing本身有问题
+            self.refresh_folders()
+            self.refresh_devices()
                 
         except Exception as e:
             logger.error(f"自动刷新失败: {e}")
