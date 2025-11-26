@@ -463,10 +463,16 @@ class EasytierManager:
         rx_bytes = 0
         
         try:
+            # 输出完整的原始数据用于调试
+            logger.debug(f"easytier-cli connector 原始输出:\n{output}")
+            
             lines = output.strip().split('\n')
             
             # 解析表格数据，查找 tx_bytes 和 rx_bytes 列
-            in_data = False
+            header_found = False
+            tx_col_index = -1
+            rx_col_index = -1
+            
             for line in lines:
                 line = line.strip()
                 
@@ -474,9 +480,20 @@ class EasytierManager:
                 if not line:
                     continue
                 
-                # 识别表头
-                if 'tx_bytes' in line.lower() and 'rx_bytes' in line.lower():
-                    in_data = True
+                # 识别表头，找到 tx_bytes 和 rx_bytes 的列位置
+                if not header_found and '|' in line:
+                    parts = [p.strip().lower() for p in line.split('|')]
+                    logger.debug(f"表头列: {parts}")
+                    
+                    for i, col in enumerate(parts):
+                        if 'tx_bytes' in col:
+                            tx_col_index = i
+                        elif 'rx_bytes' in col:
+                            rx_col_index = i
+                    
+                    if tx_col_index >= 0 and rx_col_index >= 0:
+                        header_found = True
+                        logger.debug(f"tx_bytes列索引: {tx_col_index}, rx_bytes列索引: {rx_col_index}")
                     continue
                 
                 # 跳过分隔符行
@@ -484,31 +501,44 @@ class EasytierManager:
                     continue
                 
                 # 解析数据行
-                if in_data and '|' in line:
+                if header_found and '|' in line:
                     parts = [p.strip() for p in line.split('|')]
+                    logger.debug(f"数据行: {parts}")
                     
-                    # 查找 tx_bytes 和 rx_bytes 列（通常在后面几列）
-                    for i, part in enumerate(parts):
-                        # 累加所有连接的流量
-                        if part.isdigit():
-                            # 简化处理：找到数字列，通常tx_bytes在rx_bytes之前
-                            # 需要根据实际输出格式调整
-                            try:
-                                # 尝试解析流量数据（可能需要根据实际格式调整）
-                                if i >= len(parts) - 2:  # 假设最后两列是tx_bytes和rx_bytes
-                                    if i == len(parts) - 2:
-                                        tx_bytes += int(part)
-                                    elif i == len(parts) - 1:
-                                        rx_bytes += int(part)
-                            except ValueError:
-                                continue
+                    try:
+                        # 按照找到的列索引提取数据
+                        if tx_col_index < len(parts):
+                            tx_val = parts[tx_col_index].replace(',', '')  # 移除千位分隔符
+                            if tx_val.isdigit():
+                                tx_bytes += int(tx_val)
+                        
+                        if rx_col_index < len(parts):
+                            rx_val = parts[rx_col_index].replace(',', '')
+                            if rx_val.isdigit():
+                                rx_bytes += int(rx_val)
+                    except (ValueError, IndexError) as e:
+                        logger.warning(f"解析数据行失败: {e}")
+                        continue
             
-            logger.debug(f"解析流量统计: TX={tx_bytes} bytes, RX={rx_bytes} bytes")
+            logger.info(f"解析流量统计: TX={tx_bytes} bytes ({self._format_bytes(tx_bytes)}), RX={rx_bytes} bytes ({self._format_bytes(rx_bytes)})")
             
         except Exception as e:
             logger.warning(f"解析流量统计失败: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
         
         return {
             'tx_bytes': tx_bytes,
             'rx_bytes': rx_bytes
         }
+    
+    def _format_bytes(self, bytes_value):
+        """格式化字节数为可读格式"""
+        if bytes_value < 1024:
+            return f"{bytes_value} B"
+        elif bytes_value < 1024 * 1024:
+            return f"{bytes_value / 1024:.2f} KB"
+        elif bytes_value < 1024 * 1024 * 1024:
+            return f"{bytes_value / 1024 / 1024:.2f} MB"
+        else:
+            return f"{bytes_value / 1024 / 1024 / 1024:.2f} GB"
