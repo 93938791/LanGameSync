@@ -685,7 +685,16 @@ class SyncthingManager:
                     folder['paused'] = False
                     logger.info(f"已恢复文件夹同步: {folder_id}")
                     # 使用同步模式，确保配置立即生效
-                    return self.set_config(config, async_mode=False)
+                    result = self.set_config(config, async_mode=False)
+                    
+                    # 等待一下然后检查连接状态
+                    if result:
+                        import time
+                        time.sleep(2)  # 等待2秒，让Syncthing尝试连接
+                        logger.info("⚠️ 检查设备连接状态...")
+                        self.get_connections()  # 输出连接状态
+                    
+                    return result
             
             logger.warning(f"未找到文件夹: {folder_id}")
             return False
@@ -756,7 +765,20 @@ class SyncthingManager:
         try:
             resp = requests.get(f"{self.api_url}/rest/system/connections", headers=self.headers, timeout=5)
             resp.raise_for_status()
-            return resp.json()
+            connections = resp.json()
+            
+            # 输出详细连接状态
+            logger.info("🔍 Syncthing连接状态:")
+            total_devices = connections.get('total', {})
+            logger.info(f"   总计: {len(connections.get('connections', {}))} 个设备")
+            
+            for device_id, conn in connections.get('connections', {}).items():
+                connected = conn.get('connected', False)
+                address = conn.get('address', 'N/A')
+                client_version = conn.get('clientVersion', 'N/A')
+                logger.info(f"   [{device_id[:7]}...] 连接={connected}, 地址={address}, 版本={client_version}")
+            
+            return connections
         except Exception as e:
             logger.error(f"获取连接状态失败: {e}")
             return None
