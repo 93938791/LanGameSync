@@ -1093,6 +1093,19 @@ class GameInterface(QWidget):
             parent=self
         )
     
+    @pyqtSlot(str)
+    def _show_success_message(self, message):
+        """线程安全的成功消息显示"""
+        InfoBar.success(
+            title='成功',
+            content=message,
+            orient=Qt.Horizontal,
+            isClosable=True,
+            position=InfoBarPosition.TOP,
+            duration=2000,
+            parent=self
+        )
+    
     @pyqtSlot(str, str)
     def _handle_game_message_safe(self, message_type, data_json):
         """
@@ -1639,7 +1652,13 @@ class GameInterface(QWidget):
             version = self.selected_game.get('version')
             save_path = self.selected_game.get('save_path', '')
             launcher_path = self.selected_game.get('launcher_path')
-            player_name = self.selected_game.get('selected_account')
+            player_account = self.selected_game.get('selected_account', {})
+            player_name = player_account.get('name', '') if isinstance(player_account, dict) else str(player_account)
+            
+            logger.info(f"准备加入游戏: {game_name}")
+            logger.info(f"版本: {version}")
+            logger.info(f"玩家: {player_name}")
+            logger.info(f"服务器: {self.game_host}:{self.game_port}")
             
             # 从存档路径推断 Minecraft 目录
             minecraft_dir = self._get_minecraft_dir_from_save_path(save_path)
@@ -1656,11 +1675,6 @@ class GameInterface(QWidget):
                 )
                 return
             
-            logger.info(f"Minecraft 目录: {minecraft_dir}")
-            logger.info(f"游戏版本: {version}")
-            logger.info(f"玩家: {player_name}")
-            logger.info(f"连接到服务器: {self.game_host}:{self.game_port}")
-            
             # 禁用加入按钮
             self.join_game_btn.setEnabled(False)
             self.join_game_btn.setText("正在加入...")
@@ -1668,15 +1682,24 @@ class GameInterface(QWidget):
             # 在子线程中启动游戏
             def join_thread():
                 try:
+                    logger.info(f"=== 开始加入游戏线程 ===")
+                    logger.info(f"Minecraft目录: {minecraft_dir}")
+                    logger.info(f"游戏版本: {version}")
+                    logger.info(f"启动器路径: {launcher_path}")
+                    logger.info(f"服务器: {self.game_host}:{self.game_port}")
+                    
                     # 创建游戏启动器
                     game_launcher = GameLauncher(minecraft_dir, version)
                     
                     # 启动游戏并自动连接服务器
+                    logger.info("调用 launch_minecraft...")
                     success = game_launcher.launch_minecraft(
                         launcher_path=launcher_path,
                         server_ip=self.game_host,
                         server_port=self.game_port
                     )
+                    
+                    logger.info(f"launch_minecraft 返回: {success}")
                     
                     if success:
                         logger.info("加入游戏成功")
