@@ -112,32 +112,26 @@ def main():
         
         create_sub_interface()
         
-        # 创建PPT翻页式的退出动画
+        # 创建淡出效果的退出动画
         def animate_splash_exit():
-            """启动页面PPT翻页式退出动画（不超出窗口边界）"""
+            """启动页面淡出效果退出动画"""
             # 先显示主窗口（但设置为透明）
             window.setWindowOpacity(0.0)
             window.show()
             
-            # 创建启动页面的高度收缩动画（从下向上收缩）
-            splash_geometry = splash.geometry()
+            # 启动页面淡出动画（从1到0）
+            splash_animation = QPropertyAnimation(splash, b"windowOpacity")
+            splash_animation.setDuration(600)  # 增加到600毫秒，更流畅
+            splash_animation.setStartValue(1.0)
+            splash_animation.setEndValue(0.0)
+            splash_animation.setEasingCurve(QEasingCurve.InOutQuad)  # 使用更平滑的曲线
             
-            # 启动页面高度动画（收缩到0）
-            splash_animation = QPropertyAnimation(splash, b"geometry")
-            splash_animation.setDuration(500)  # 500毫秒
-            splash_animation.setStartValue(splash_geometry)
-            # 收缩到顶部：保持x和width不变，height缩小到0，y向下移动
-            splash_animation.setEndValue(
-                splash_geometry.adjusted(0, 0, 0, -splash_geometry.height())
-            )
-            splash_animation.setEasingCurve(QEasingCurve.InOutQuad)
-            
-            # 主窗口透明度动画（从0到1）
+            # 主窗口淡入动画（从0到1）
             window_animation = QPropertyAnimation(window, b"windowOpacity")
-            window_animation.setDuration(500)  # 500毫秒
+            window_animation.setDuration(600)  # 与启动页面同步
             window_animation.setStartValue(0.0)
             window_animation.setEndValue(1.0)
-            window_animation.setEasingCurve(QEasingCurve.InOutQuad)
+            window_animation.setEasingCurve(QEasingCurve.InOutQuad)  # 使用相同的平滑曲线
             
             # 动画结束后的处理
             def on_animation_finished():
