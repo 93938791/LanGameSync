@@ -363,6 +363,14 @@ class SyncthingManager:
         """
         def _do_set_config():
             try:
+                # 关键修复：每次保存配置前都清理本机ID（防止被重新添加）
+                if config and 'devices' in config:
+                    original_count = len(config['devices'])
+                    config['devices'] = [dev for dev in config['devices'] if dev.get('deviceID') != self.device_id]
+                    removed = original_count - len(config['devices'])
+                    if removed > 0:
+                        logger.debug(f"⚠️ set_config中清理了 {removed} 个本机ID")
+                
                 resp = requests.put(
                     f"{self.api_url}/rest/config",
                     headers=self.headers,
