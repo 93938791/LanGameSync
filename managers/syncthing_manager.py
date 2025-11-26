@@ -450,7 +450,8 @@ class SyncthingManager:
                 if folder['id'] == folder_id:
                     folder['paused'] = False
                     logger.info(f"已恢复文件夹同步: {folder_id}")
-                    return self.set_config(config, async_mode=True)
+                    # 使用同步模式，确保配置立即生效
+                    return self.set_config(config, async_mode=False)
             
             logger.warning(f"未找到文件夹: {folder_id}")
             return False
@@ -478,7 +479,8 @@ class SyncthingManager:
                 if folder['id'] == folder_id:
                     folder['paused'] = True
                     logger.info(f"已暂停文件夹同步: {folder_id}")
-                    return self.set_config(config, async_mode=True)
+                    # 使用同步模式，确保配置立即生效
+                    return self.set_config(config, async_mode=False)
             
             logger.warning(f"未找到文件夹: {folder_id}")
             return False
