@@ -727,7 +727,7 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
                     logger.debug("未发现对等设备，仅显示本机")
                 
                 # 在主线程中更新UI
-                from PyQt5.QtCore import QMetaObject, Qt
+                from PyQt5.QtCore import QTimer
                 def update_ui():
                     try:
                         # 更新设备卡片（动态添加/删除）
@@ -751,18 +751,13 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
                     except Exception as e:
                         logger.error(f"更新UI失败: {e}")
                 
-                QMetaObject.invokeMethod(self, "_update_ui_safe", Qt.QueuedConnection,
-                                       Qt.Q_ARG(object, update_ui))
+                # 使用QTimer.singleShot在主线程执行
+                QTimer.singleShot(0, update_ui)
                 
             except Exception as e:
                 logger.error(f"后台更新客户端列表失败: {e}")
         
         threading.Thread(target=update_thread, daemon=True, name="UpdateClientsThread").start()
-    
-    @pyqtSlot(object)
-    def _update_ui_safe(self, callback):
-        """线程安全的UI更新回调"""
-        callback()
     
     def _get_remote_syncthing_id(self, peer_ip):
         """获取远程设备的Syncthing ID"""
