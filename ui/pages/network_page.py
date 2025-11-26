@@ -411,8 +411,9 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
             self.parent_window.last_peer_count = 0
             self.update_clients_list()
             
-            # 启动设备自动发现线程（定期检查并添加新设备到Syncthing）
-            self._start_device_discovery_thread()
+            # 不再启动持续轮询线程，改为连接时发现一次
+            # self._start_device_discovery_thread()  # 已禁用
+            logger.info("设备发现已完成，不启动持续监测")
             
             InfoBar.success(
                 title='连接成功',
