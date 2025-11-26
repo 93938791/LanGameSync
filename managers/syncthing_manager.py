@@ -782,6 +782,14 @@ class SyncthingManager:
             # 查找文件夹
             for folder in config.get('folders', []):
                 if folder['id'] == folder_id:
+                    # 确保 .stfolder 标记文件夹存在
+                    folder_path = Path(folder.get('path', ''))
+                    if folder_path.exists():
+                        stfolder_marker = folder_path / ".stfolder"
+                        if not stfolder_marker.exists():
+                            stfolder_marker.mkdir(exist_ok=True)
+                            logger.info(f"创建 .stfolder 标记文件夹: {stfolder_marker}")
+                    
                     # 检查是否有共享设备（get_config已自动过滤本机ID）
                     folder_devices = folder.get('devices', [])
                     if not folder_devices:
