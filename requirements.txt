@@ -1,6 +1,7 @@
 PyQt5==5.15.10
 PyQt-Fluent-Widgets[full]>=1.9.2
 requests==2.31.0
+PySocks==1.7.1
 psutil==5.9.6
 nuitka
 pyinstaller==6.3.0
