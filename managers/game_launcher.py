@@ -173,7 +173,7 @@ class GameLauncher:
             # 3. 获取主类
             main_class = version_data.get('mainClass', 'net.minecraft.client.main.Main')
             
-            # 4. 获取游戏参数
+            # 4. 获取游戏参数（关键修复：调用_replace_variables处理Token）
             game_args = self._get_game_arguments(version_data)
             game_args = [self._replace_variables(arg, player_name, use_offline, mojang_uuid, mojang_token, version_data, account_type) for arg in game_args]
             
@@ -241,7 +241,7 @@ class GameLauncher:
             cmd.append('1280')
             cmd.append('--height')
             cmd.append('720')
-            logger.info(f"添加服务器连接参数: --server {server_ip} --port {server_port} （窗口模式 1280x720）")
+            logger.info(f"添加窗口模式: 1280x720")
             
             return cmd
             
