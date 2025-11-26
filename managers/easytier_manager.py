@@ -123,9 +123,31 @@ class EasytierManager:
     
     def stop(self):
         """停止Easytier服务"""
+        import psutil
+        
+        # 先尝试正常停止进程
         if self.process:
             ProcessHelper.kill_process(self.process)
             self.process = None
+        
+        # 强制清理所有 easytier-core.exe 进程（防止残留）
+        killed_count = 0
+        try:
+            for proc in psutil.process_iter(['pid', 'name']):
+                try:
+                    if proc.info['name'] and 'easytier-core' in proc.info['name'].lower():
+                        logger.info(f"清理残留进程: {proc.info['name']} (PID: {proc.info['pid']})")
+                        proc.kill()
+                        proc.wait(timeout=3)
+                        killed_count += 1
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+        except Exception as e:
+            logger.warning(f"清理进程失败: {e}")
+        
+        if killed_count > 0:
+            logger.info(f"Easytier已停止，清理了 {killed_count} 个残留进程")
+        else:
             logger.info("Easytier已停止")
     
     def _get_virtual_ip(self):
