@@ -520,7 +520,11 @@ class EasytierManager:
                         logger.warning(f"解析数据行失败: {e}")
                         continue
             
-            logger.info(f"解析流量统计: TX={tx_bytes} bytes ({self._format_bytes(tx_bytes)}), RX={rx_bytes} bytes ({self._format_bytes(rx_bytes)})")
+            # 只在流量大于0时才打印INFO日志，避免频繁输出0流量
+            if tx_bytes > 0 or rx_bytes > 0:
+                logger.info(f"解析流量统计: TX={tx_bytes} bytes ({self._format_bytes(tx_bytes)}), RX={rx_bytes} bytes ({self._format_bytes(rx_bytes)})")
+            else:
+                logger.debug(f"解析流量统计: TX={tx_bytes} bytes, RX={rx_bytes} bytes")
             
         except Exception as e:
             logger.warning(f"解析流量统计失败: {e}")
