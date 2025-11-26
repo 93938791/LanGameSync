@@ -5,7 +5,7 @@ import sys
 import os
 import ctypes
 from PyQt5.QtWidgets import QApplication
-from PyQt5.QtCore import Qt, QTimer, QEventLoop, QSize
+from PyQt5.QtCore import Qt, QTimer, QEventLoop, QSize, QPropertyAnimation, QEasingCurve, QPoint
 from PyQt5.QtGui import QIcon
 from qfluentwidgets import SplashScreen
 from config import Config
@@ -112,9 +112,36 @@ def main():
         
         create_sub_interface()
         
-        # 隐藏启动页面并显示主窗口
-        splash.finish()
-        window.show()
+        # 创建从下到上的退出动画
+        def animate_splash_exit():
+            """启动页面从下到上退出动画"""
+            # 获取当前位置
+            start_pos = splash.pos()
+            # 目标位置：向下移动窗口高度（从屏幕底部退出）
+            end_pos = QPoint(start_pos.x(), desktop.height())
+            
+            # 创建位置动画
+            animation = QPropertyAnimation(splash, b"pos")
+            animation.setDuration(600)  # 动画时长600毫秒
+            animation.setStartValue(start_pos)
+            animation.setEndValue(end_pos)
+            animation.setEasingCurve(QEasingCurve.InOutCubic)  # 使用平滑的缓动曲线
+            
+            # 动画结束后的处理
+            def on_animation_finished():
+                splash.finish()  # 关闭启动页面
+                window.show()    # 显示主窗口
+            
+            animation.finished.connect(on_animation_finished)
+            animation.start()
+            
+            # 等待动画完成
+            loop = QEventLoop()
+            animation.finished.connect(loop.quit)
+            loop.exec()
+        
+        # 执行退出动画
+        animate_splash_exit()
         
         sys.exit(app.exec_())
         
