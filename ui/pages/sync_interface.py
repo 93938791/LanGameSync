@@ -486,3 +486,136 @@ class SyncInterface(ScrollArea):
                 logger.info(f"设备列表: 总计 {device_count} 个设备")
         except Exception as e:
             logger.error(f"刷新设备列表失败: {e}")
+    
+    def showEvent(self, event):
+        """页面显示事件：进入页面时发现设备"""
+        super().showEvent(event)
+        logger.info("进入存档同步页面，开始发现设备...")
+        
+        # 刷新页面显示
+        self.refresh_sync()
+        
+        # 启动设备发现（只发现一次）
+        if hasattr(self.parent_window, 'is_connected') and self.parent_window.is_connected:
+            self._discover_devices_once()
+    
+    def hideEvent(self, event):
+        """页面隐藏事件：离开页面时停止扫描"""
+        super().hideEvent(event)
+        logger.info("离开存档同步页面")
+        # 暂时不需要停止任何东西，因为只是发现一次
+    
+    def _discover_devices_once(self):
+        """发现设备（只执行一次）"""
+        try:
+            if not hasattr(self.parent_window, 'controller') or not self.parent_window.controller:
+                return
+            
+            if not hasattr(self.parent_window, 'syncthing_manager') or not self.parent_window.syncthing_manager:
+                return
+            
+            # 获取对等设备列表
+            peers = self.parent_window.controller.easytier.discover_peers(timeout=3)
+            if not peers:
+                logger.info("未发现对等设备")
+                return
+            
+            my_syncthing_id = self.parent_window.syncthing_manager.device_id
+            my_ip = self.parent_window.controller.easytier.virtual_ip or "unknown"
+            
+            discovered_count = 0
+            # 遍历所有对等设备
+            for peer in peers:
+                ipv4 = peer.get('ipv4', '')
+                hostname = peer.get('hostname', 'Unknown')
+                
+                # 过滤掉本机
+                if not ipv4 or ipv4 == my_ip or hostname == Config.HOSTNAME:
+                    continue
+                
+                # 尝试获取远程设备的Syncthing ID
+                device_id = self._get_remote_syncthing_id(ipv4)
+                
+                if device_id and device_id != my_syncthing_id:
+                    # 添加设备到Syncthing（如果已存在则返回None）
+                    result = self.parent_window.syncthing_manager.add_device(device_id, hostname)
+                    # 只有真正添加了新设备时才执行后续操作
+                    if result is True:
+                        logger.info(f"自动发现并添加设备: {hostname} ({device_id[:7]}...) - {ipv4}")
+                        discovered_count += 1
+                        
+                        # 将设备添加到所有正在同步的文件夹
+                        self._add_device_to_active_folders(device_id)
+            
+            if discovered_count > 0:
+                logger.info(f"设备发现完成，新增 {discovered_count} 个设备")
+                # 刷新设备列表
+                self.refresh_devices()
+            else:
+                logger.info("设备发现完成，未发现新设备")
+                
+        except Exception as e:
+            logger.error(f"设备发现失败: {e}")
+    
+    def _get_remote_syncthing_id(self, peer_ip):
+        """获取远程设备的Syncthing ID"""
+        try:
+            proxies = {
+                'http': f'socks5h://127.0.0.1:{Config.EASYTIER_SOCKS5_PORT}',
+                'https': f'socks5h://127.0.0.1:{Config.EASYTIER_SOCKS5_PORT}'
+            }
+            
+            url = f"http://{peer_ip}:{Config.SYNCTHING_API_PORT}/rest/system/status"
+            headers = {"X-API-Key": Config.SYNCTHING_API_KEY}
+            
+            logger.info(f"尝试通过SOCKS5访问: {url}")
+            resp = requests.get(url, headers=headers, proxies=proxies, timeout=5)
+            resp.raise_for_status()
+            
+            device_id = resp.json()["myID"]
+            logger.info(f"✅ 成功从 {peer_ip} 获取到设备ID: {device_id[:7]}...")
+            return device_id
+        except requests.exceptions.ProxyError as e:
+            logger.warning(f"❌ SOCKS5代理连接失败（{peer_ip}）: {e}")
+            return None
+        except requests.exceptions.Timeout:
+            logger.warning(f"❌ 连接到 {peer_ip} 超时（可能对方Syncthing还未启动）")
+            return None
+        except requests.exceptions.HTTPError as e:
+            logger.warning(f"❌ HTTP错误（{peer_ip}）: {e} - 可能是API Key不匹配")
+            return None
+        except Exception as e:
+            logger.warning(f"❌ 无法从 {peer_ip} 获取Syncthing ID: {type(e).__name__}: {e}")
+            return None
+    
+    def _add_device_to_active_folders(self, device_id):
+        """将新发现的设备添加到所有正在同步的文件夹"""
+        try:
+            config = self.parent_window.syncthing_manager.get_config()
+            if not config:
+                return
+            
+            folders = config.get('folders', [])
+            updated = False
+            
+            for folder in folders:
+                # 只处理未暂停的文件夹
+                if folder.get('paused', False):
+                    continue
+                
+                # 检查设备是否已在文件夹中
+                folder_devices = folder.get('devices', [])
+                device_ids = [d['deviceID'] for d in folder_devices]
+                
+                if device_id not in device_ids:
+                    # 添加设备到文件夹
+                    folder_devices.append({'deviceID': device_id})
+                    folder['devices'] = folder_devices
+                    updated = True
+                    logger.info(f"将设备 {device_id[:7]}... 添加到文件夹 {folder.get('id')}")
+            
+            if updated:
+                self.parent_window.syncthing_manager.set_config(config, async_mode=True)
+                logger.info("已更新Syncthing配置，新设备已添加到同步文件夹")
+        except Exception as e:
+            logger.error(f"添加设备到文件夹失败: {e}")
