@@ -90,6 +90,13 @@ def main():
         # 设置启动页面窗口标志
         splash.setWindowFlags(Qt.SplashScreen | Qt.FramelessWindowHint)
         
+        # 移动启动页面到屏幕中心
+        desktop = QApplication.desktop().availableGeometry()
+        splash.move(
+            (desktop.width() - splash.width()) // 2,
+            (desktop.height() - splash.height()) // 2
+        )
+        
         # 显示启动页面（在主窗口显示之前）
         splash.show()
         
