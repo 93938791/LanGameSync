@@ -43,11 +43,15 @@ class SyncthingManager:
         
         # 无TUN模式下，配置Syncthing使用SOCKS5代理进行出站连接
         # 这样Syncthing主动连接其他设备时也可以通过SOCKS5访问虚拟IP
-        env["all_proxy"] = f"socks5://127.0.0.1:{Config.EASYTIER_SOCKS5_PORT}"
-        env["ALL_PROXY"] = f"socks5://127.0.0.1:{Config.EASYTIER_SOCKS5_PORT}"
+        # 注意：Syncthing使用Go语言，优先识别小写环境变量
+        proxy_url = f"socks5://127.0.0.1:{Config.EASYTIER_SOCKS5_PORT}"
+        env["all_proxy"] = proxy_url
+        env["ALL_PROXY"] = proxy_url  # 也设置大写版本，确保兼容
         # 禁止回退到直接连接，确保所有连接都通过SOCKS5代理
         env["ALL_PROXY_NO_FALLBACK"] = "1"
-        logger.info(f"✅ 配置Syncthing使用SOCKS5代理: socks5://127.0.0.1:{Config.EASYTIER_SOCKS5_PORT} (禁止回退)")
+        logger.info(f"✅ 配置Syncthing环境变量:")
+        logger.info(f"   all_proxy / ALL_PROXY = {proxy_url}")
+        logger.info(f"   ALL_PROXY_NO_FALLBACK = 1")
         
         # 启动参数：禁用浏览器、禁用升级检查
         # gui-address=0.0.0.0 表示监听所有网络接口（包括虚拟网卡）
@@ -420,6 +424,15 @@ class SyncthingManager:
             
             config["devices"].append(new_device)
             logger.info(f"添加新设备: {device_name or device_id[:7]} ({device_id[:7]}...) 地址: {addresses}")
+            
+            # 输出详细诊断信息
+            logger.info(f"🔍 设备配置详情:")
+            logger.info(f"   设备ID: {device_id}")
+            logger.info(f"   设备名称: {device_name or device_id[:7]}")
+            logger.info(f"   虚拟IP: {device_address or 'N/A'}")
+            logger.info(f"   连接地址: {addresses}")
+            if device_address:
+                logger.info(f"   ⚠️ 将通过SOCKS5代理({Config.EASYTIER_SOCKS5_PORT})连接到 {device_address}:22000")
             
             return self.set_config(config, async_mode=async_mode)
     
