@@ -883,6 +883,23 @@ class GameInterface(QWidget):
                     
                     if not success:
                         logger.error("游戏启动失败")
+                        
+                        # 停止启动中广播
+                        from PyQt5.QtCore import QTimer
+                        QTimer.singleShot(0, lambda: self._stop_starting_broadcast())
+                        
+                        # 广播启动失败
+                        if hasattr(self.parent_window, 'tcp_broadcast') and self.parent_window.tcp_broadcast:
+                            self.parent_window.tcp_broadcast.publish(
+                                "game/failed",
+                                {
+                                    "game_name": game_name,
+                                    "world_name": world_name,
+                                    "player_name": player_name,
+                                    "error": "游戏启动失败"
+                                }
+                            )
+                        
                         QMetaObject.invokeMethod(
                             self,
                             "_show_error_message",
@@ -961,8 +978,23 @@ class GameInterface(QWidget):
                             else:
                                 logger.warning("自动开启局域网失败，请手动开启")
                                 
-                                # 恢复按钮状态
+                                # 停止启动中广播
                                 from PyQt5.QtCore import QTimer
+                                QTimer.singleShot(0, lambda: self._stop_starting_broadcast())
+                                
+                                # 广播启动失败（需要手动开启局域网）
+                                if hasattr(self.parent_window, 'tcp_broadcast') and self.parent_window.tcp_broadcast:
+                                    self.parent_window.tcp_broadcast.publish(
+                                        "game/failed",
+                                        {
+                                            "game_name": game_name,
+                                            "world_name": world_name,
+                                            "player_name": player_name,
+                                            "error": "需要手动开启局域网"
+                                        }
+                                    )
+                                
+                                # 恢复按钮状态
                                 QTimer.singleShot(0, lambda: self.launch_game_btn.setEnabled(True))
                                 QTimer.singleShot(0, lambda: self.launch_game_btn.setText("启动游戏"))
                                 
@@ -976,8 +1008,23 @@ class GameInterface(QWidget):
                         else:
                             logger.warning("等待进入世界超时")
                             
-                            # 恢复按钮状态
+                            # 停止启动中广播
                             from PyQt5.QtCore import QTimer
+                            QTimer.singleShot(0, lambda: self._stop_starting_broadcast())
+                            
+                            # 广播启动失败
+                            if hasattr(self.parent_window, 'tcp_broadcast') and self.parent_window.tcp_broadcast:
+                                self.parent_window.tcp_broadcast.publish(
+                                    "game/failed",
+                                    {
+                                        "game_name": game_name,
+                                        "world_name": world_name,
+                                        "player_name": player_name,
+                                        "error": "等待进入世界超时"
+                                    }
+                                )
+                            
+                            # 恢复按钮状态
                             QTimer.singleShot(0, lambda: self.launch_game_btn.setEnabled(True))
                             QTimer.singleShot(0, lambda: self.launch_game_btn.setText("启动游戏"))
                             
@@ -991,8 +1038,23 @@ class GameInterface(QWidget):
                     else:
                         logger.warning("未检测到游戏窗口")
                         
-                        # 恢复按钮状态
+                        # 停止启动中广播
                         from PyQt5.QtCore import QTimer
+                        QTimer.singleShot(0, lambda: self._stop_starting_broadcast())
+                        
+                        # 广播启动失败
+                        if hasattr(self.parent_window, 'tcp_broadcast') and self.parent_window.tcp_broadcast:
+                            self.parent_window.tcp_broadcast.publish(
+                                "game/failed",
+                                {
+                                    "game_name": game_name,
+                                    "world_name": world_name,
+                                    "player_name": player_name,
+                                    "error": "未检测到游戏窗口"
+                                }
+                            )
+                        
+                        # 恢复按钮状态
                         QTimer.singleShot(0, lambda: self.launch_game_btn.setEnabled(True))
                         QTimer.singleShot(0, lambda: self.launch_game_btn.setText("启动游戏"))
                         
