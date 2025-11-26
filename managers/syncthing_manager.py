@@ -158,8 +158,8 @@ class SyncthingManager:
             original_global = options.get('globalAnnounceEnabled', True)
             original_relay = options.get('relaysEnabled', True)
             
-            # 保留本地发现，禁用全局发现和中继（无TUN模式下需要本地发现）
-            options['localAnnounceEnabled'] = True  # 保留本地发现（LAN）
+            # 禁用所有自动发现，强制使用配置的虚拟IP地址
+            options['localAnnounceEnabled'] = False  # 禁用本地发现（避免绕过SOCKS5）
             options['globalAnnounceEnabled'] = False  # 禁用全局发现（互联网）
             options['relaysEnabled'] = False  # 禁用中继服务器
             options['natEnabled'] = False  # 禁用NAT穿透
@@ -171,8 +171,8 @@ class SyncthingManager:
             result = self.set_config(config, async_mode=False)
             
             if result:
-                logger.info(f"✅ 已配置Syncthing发现：本地发现={original_local}→True, 全局发现={original_global}→False, 中继={original_relay}→False")
-                logger.info("🔍 使用本地发现（LAN）进行设备连接")
+                logger.info(f"✅ 已配置Syncthing发现：本地发现={original_local}→False, 全局发现={original_global}→False, 中继={original_relay}→False")
+                logger.info("🚫 已禁用所有自动发现，强制使用配置的虚拟IP地址（通过SOCKS5）")
             else:
                 logger.warning("配置发现失败")
             
