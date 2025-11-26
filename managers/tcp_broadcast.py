@@ -48,7 +48,7 @@ class TCPBroadcast:
             self.listen_thread.start()
             
             self.connected = True
-            logger.info(f"TCP广播已启动,端口: {self.broadcast_port}, SOCKS5: {self.socks5_port}")
+            logger.info(f"TCP广播已启动,端口: {self.broadcast_port}")
             return True
             
         except Exception as e:

@@ -33,6 +33,9 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
         self.discovery_thread = None  # 设备发现线程
         self.discovery_running = False  # 设备发现线程运行标志
         
+        # 日志去重：记录最近重连的设备ID，避免重复输出
+        self.last_reconnect_log_time = {}  # 记录每个设备最近一次重连日志的时间戳
+        
         # 流量统计定时器
         self.traffic_timer = QTimer()
         self.traffic_timer.timeout.connect(self.update_traffic_stats)
@@ -681,7 +684,13 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
                             self._add_device_to_active_folders(device_id)
                         # 如果设备已存在但未连接，触发重连
                         elif result is None and device_id not in connected_device_ids:
-                            logger.info(f"🔄 设备 {hostname} ({device_id[:7]}...) 已上线但未连接，触发重连...")
+                            # 日志去重：只有距离上次日志超过30秒才输出
+                            import time
+                            current_time = time.time()
+                            last_log_time = self.last_reconnect_log_time.get(device_id, 0)
+                            if current_time - last_log_time > 30:  # 30秒内不重复输出
+                                logger.info(f"🔄 设备 {hostname} ({device_id[:7]}...) 已上线但未连接，触发重连...")
+                                self.last_reconnect_log_time[device_id] = current_time
                             self.parent_window.syncthing_manager._restart_device_connection(device_id)
                     
                     # 获取延迟（如果有）
@@ -818,7 +827,13 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
                                 self._add_device_to_active_folders(device_id)
                             # 如果设备已存在但未连接，触发重连
                             elif result is None and device_id not in connected_device_ids:
-                                logger.info(f"🔄 设备 {hostname} ({device_id[:7]}...) 已上线但未连接，触发重连...")
+                                # 日志去重：只有距离上次日志超过30秒才输出
+                                import time
+                                current_time = time.time()
+                                last_log_time = self.last_reconnect_log_time.get(device_id, 0)
+                                if current_time - last_log_time > 30:  # 30秒内不重复输出
+                                    logger.info(f"🔄 设备 {hostname} ({device_id[:7]}...) 已上线但未连接，触发重连...")
+                                    self.last_reconnect_log_time[device_id] = current_time
                                 self.parent_window.syncthing_manager._restart_device_connection(device_id)
                     
                     # 每10秒扫描一次

@@ -32,6 +32,7 @@ class GameInterface(QWidget):
         self.game_process = None  # 游戏进程对象
         self.process_monitor_thread = None  # 进程监控线程
         self.broadcast_timer = None  # 主机广播定时器
+        self.starting_broadcast_timer = None  # “启动中”状态广播定时器
         
         # 设置全局唯一的对象名称（必须）
         self.setObjectName("gameInterface")
@@ -855,6 +856,9 @@ class GameInterface(QWidget):
                         "player_name": player_name
                     }
                 )
+                
+                # 启动“启动中”状态广播定时器，让新进来的玩家也能感知到
+                self._start_starting_broadcast(game_name, world_name, player_name)
             else:
                 logger.warning("tcp_broadcast 不存在！")
             
@@ -912,8 +916,11 @@ class GameInterface(QWidget):
                                 self._start_process_monitor(game_name, world_name, player_name)
                                 
                                 # 广播游戏启动成功（其他人按钮变为"加入游戏"）
-                                logger.info("检查TCP广播对象...")
                                 if hasattr(self.parent_window, 'tcp_broadcast') and self.parent_window.tcp_broadcast:
+                                    # 停止"启动中"广播
+                                    from PyQt5.QtCore import QTimer
+                                    QTimer.singleShot(0, lambda: self._stop_starting_broadcast())
+                                    
                                     # 获取本机EasyTier虚拟IP
                                     virtual_ip = ""
                                     if hasattr(self.parent_window, 'controller') and hasattr(self.parent_window.controller, 'easytier'):
@@ -922,7 +929,6 @@ class GameInterface(QWidget):
                                     if not virtual_ip:
                                         logger.warning("未获取到EasyTier虚拟IP，其他玩家可能无法加入")
                                     
-                                    logger.info(f"tcp_broadcast 存在，开始广播 game/started (host_ip={virtual_ip}, port={lan_port})")
                                     self.parent_window.tcp_broadcast.publish(
                                         "game/started",
                                         {
@@ -1008,6 +1014,7 @@ class GameInterface(QWidget):
                     
                     # 停止广播定时器
                     from PyQt5.QtCore import QTimer
+                    QTimer.singleShot(0, lambda: self._stop_starting_broadcast())
                     QTimer.singleShot(0, lambda: self._stop_host_broadcast())
                     
                     # 广播游戏启动失败（恢复所有人的启动按钮）
@@ -1882,6 +1889,55 @@ class GameInterface(QWidget):
             self.broadcast_timer.deleteLater()
             self.broadcast_timer = None
             logger.info("已停止主机广播定时器")
+    
+    def _start_starting_broadcast(self, game_name, world_name, player_name):
+        """
+        启动"启动中"状态广播定时器，每5秒广播一次，让新进来的玩家也能感知
+        
+        Args:
+            game_name: 游戏名称
+            world_name: 世界名称
+            player_name: 玩家名称
+        """
+        from PyQt5.QtCore import QTimer
+        
+        # 先停止旧的定时器
+        self._stop_starting_broadcast()
+        
+        def broadcast_starting():
+            """广播游戏启动中消息"""
+            try:
+                if not self.is_host or self.game_port:
+                    # 已经启动成功或不再是主机，停止广播
+                    self._stop_starting_broadcast()
+                    return
+                
+                if hasattr(self.parent_window, 'tcp_broadcast') and self.parent_window.tcp_broadcast:
+                    self.parent_window.tcp_broadcast.publish(
+                        "game/starting",
+                        {
+                            "game_name": game_name,
+                            "world_name": world_name,
+                            "player_name": player_name
+                        }
+                    )
+                    logger.debug(f"持续广播游戏启动中: {game_name}/{world_name}")
+            except Exception as e:
+                logger.error(f"广播启动中消息失败: {e}")
+        
+        # 创建定时器，每5秒广播一次
+        self.starting_broadcast_timer = QTimer()
+        self.starting_broadcast_timer.timeout.connect(broadcast_starting)
+        self.starting_broadcast_timer.start(5000)  # 5秒
+        logger.info("已启动'启动中'广播定时器，每5秒广播一次")
+    
+    def _stop_starting_broadcast(self):
+        """停止'启动中'状态广播定时器"""
+        if self.starting_broadcast_timer:
+            self.starting_broadcast_timer.stop()
+            self.starting_broadcast_timer.deleteLater()
+            self.starting_broadcast_timer = None
+            logger.info("已停止'启动中'广播定时器")
     
     def close_game(self):
         """关闭游戏进程"""
