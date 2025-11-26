@@ -141,24 +141,45 @@ class SyncthingManager:
             logger.error(f"获取配置失败: {e}")
             return None
     
-    def set_config(self, config):
-        """设置完整配置"""
-        try:
-            resp = requests.put(
-                f"{self.api_url}/rest/config",
-                headers=self.headers,
-                json=config,
-                timeout=10
-            )
-            resp.raise_for_status()
-            logger.info("配置已更新")
+    def set_config(self, config, async_mode=False):
+        """设置完整配置
+        
+        Args:
+            config: 配置对象
+            async_mode: 是否异步执行（避免阻塞主程序）
+        """
+        def _do_set_config():
+            try:
+                resp = requests.put(
+                    f"{self.api_url}/rest/config",
+                    headers=self.headers,
+                    json=config,
+                    timeout=30  # 增加超时时间
+                )
+                resp.raise_for_status()
+                logger.info("配置已更新")
+                return True
+            except Exception as e:
+                logger.error(f"设置配置失败: {e}")
+                return False
+        
+        if async_mode:
+            # 异步执行，避免阻塞主程序
+            thread = threading.Thread(target=_do_set_config, daemon=True)
+            thread.start()
+            logger.info("配置更新已提交到后台线程")
             return True
-        except Exception as e:
-            logger.error(f"设置配置失败: {e}")
-            return False
+        else:
+            return _do_set_config()
     
-    def add_device(self, device_id, device_name=None):
-        """添加远程设备"""
+    def add_device(self, device_id, device_name=None, async_mode=True):
+        """添加远程设备
+        
+        Args:
+            device_id: 设备ID
+            device_name: 设备名称
+            async_mode: 是否异步执行（默认True，避免阻塞主程序）
+        """
         config = self.get_config()
         if not config:
             return False
@@ -182,7 +203,7 @@ class SyncthingManager:
         
         config["devices"].append(new_device)
         
-        return self.set_config(config)
+        return self.set_config(config, async_mode=async_mode)
     
     def set_device_name(self, device_id, name):
         """
@@ -202,7 +223,7 @@ class SyncthingManager:
                 if device['deviceID'] == device_id:
                     device['name'] = name
                     logger.info(f"已设置设备 {device_id[:7]}... 的名称为: {name}")
-                    return self.set_config(config)
+                    return self.set_config(config, async_mode=True)
             
             logger.warning(f"未找到设备: {device_id}")
             return False
@@ -234,7 +255,7 @@ class SyncthingManager:
             logger.error(f"获取设备名称失败: {e}")
             return ''
     
-    def add_folder(self, folder_path, folder_id=None, folder_label=None, devices=None, watcher_delay=30, paused=True):
+    def add_folder(self, folder_path, folder_id=None, folder_label=None, devices=None, watcher_delay=30, paused=True, async_mode=True):
         """
         添加同步文件夹
         
@@ -245,6 +266,7 @@ class SyncthingManager:
             devices: 共享设备ID列表
             watcher_delay: 文件监控延迟(秒),文件静默这么久后才同步
             paused: 是否暂停同步（默认为True，需要手动启动）
+            async_mode: 是否异步执行（默认True，避免阻塞主程序）
         """
         folder_path = Path(folder_path)
         if not folder_path.exists():
@@ -269,7 +291,7 @@ class SyncthingManager:
                 if devices:
                     folder["devices"] = [{"deviceID": dev_id} for dev_id in devices]
                 logger.info(f"更新文件夹: 延迟={watcher_delay}秒, 暂停={paused}")
-                return self.set_config(config)
+                return self.set_config(config, async_mode=async_mode)
         
         # 创建新文件夹
         new_folder = {
@@ -303,7 +325,7 @@ class SyncthingManager:
         logger.info(f"创建同步文件夹: {folder_id}, 监控延迟: {watcher_delay}秒, 暂停状态: {paused}")
         config["folders"].append(new_folder)
         
-        return self.set_config(config)
+        return self.set_config(config, async_mode=async_mode)
     
     def setup_sync_folder(self, folder_id, folder_path, folder_label, watcher_delay=30):
         """
@@ -386,7 +408,7 @@ class SyncthingManager:
                     existing_devices.append({'deviceID': device_id})
                     folder['devices'] = existing_devices
                     logger.info(f"已添加设备 {device_id[:7]}... 到文件夹 {folder_id}")
-                    return self.set_config(config)
+                    return self.set_config(config, async_mode=True)
             
             logger.warning(f"未找到文件夹: {folder_id}")
             return False
@@ -414,7 +436,7 @@ class SyncthingManager:
                 if folder['id'] == folder_id:
                     folder['paused'] = False
                     logger.info(f"已恢复文件夹同步: {folder_id}")
-                    return self.set_config(config)
+                    return self.set_config(config, async_mode=True)
             
             logger.warning(f"未找到文件夹: {folder_id}")
             return False
@@ -442,7 +464,7 @@ class SyncthingManager:
                 if folder['id'] == folder_id:
                     folder['paused'] = True
                     logger.info(f"已暂停文件夹同步: {folder_id}")
-                    return self.set_config(config)
+                    return self.set_config(config, async_mode=True)
             
             logger.warning(f"未找到文件夹: {folder_id}")
             return False
@@ -471,7 +493,7 @@ class SyncthingManager:
                 if folder['id'] == folder_id:
                     folders.pop(i)
                     logger.info(f"已移除文件夹: {folder_id}")
-                    return self.set_config(config)
+                    return self.set_config(config, async_mode=True)
             
             logger.warning(f"未找到文件夹: {folder_id}")
             return False

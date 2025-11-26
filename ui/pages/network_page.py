@@ -691,7 +691,7 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
                     logger.info(f"将设备 {device_id[:7]}... 添加到文件夹 {folder.get('id')}")
             
             if updated:
-                self.parent_window.syncthing_manager.set_config(config)
+                self.parent_window.syncthing_manager.set_config(config, async_mode=True)
                 logger.info("已更新Syncthing配置，新设备已添加到同步文件夹")
         except Exception as e:
             logger.error(f"添加设备到文件夹失败: {e}")

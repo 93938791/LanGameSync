@@ -1147,12 +1147,14 @@ class GameInterface(QWidget):
                 )
             
             # 添加同步文件夹（设置为非暂停状态，立即启动同步）
+            # 注意：这里使用同步模式，确保配置提交成功后再继续
             success = self.parent_window.syncthing_manager.add_folder(
                 folder_path=save_path,
                 folder_id=folder_id,
                 folder_label=folder_label,
                 devices=device_ids,
-                paused=False  # 立即启动同步，不暂停
+                paused=False,  # 立即启动同步，不暂停
+                async_mode=False  # 使用同步模式，避免后续逻辑基于未生效的配置
             )
             
             if not success:
