@@ -33,16 +33,25 @@ class ConnectThread(QThread):
                     return
             elif self.peer:
                 # 使用自定义节点
-                self.progress.emit(f"正在连接到房间 {self.room_name} (使用自定义节点)...")
-                if not self.controller.easytier.start_with_peer(self.peer, self.room_name, self.password):
+                peers_str = self.peer.get('peers', '')
+                if not peers_str:
+                    self.connected.emit(False, "节点地址为空，请配置有效节点")
+                    return
+                
+                # 将节点字符串转换为列表（支持逗号分隔的多个节点）
+                peers_list = [p.strip() for p in peers_str.split(',') if p.strip()]
+                if not peers_list:
+                    self.connected.emit(False, "节点地址无效，请检查配置")
+                    return
+                
+                self.progress.emit(f"正在连接到房间 {self.room_name} (使用节点: {self.peer.get('name', '未命名')})...")
+                if not self.controller.easytier.start(custom_peers=peers_list, network_name=self.room_name, network_secret=self.password):
                     self.connected.emit(False, "网络连接失败")
                     return
             else:
-                # 使用默认公共节点
-                self.progress.emit(f"正在连接到房间 {self.room_name}...")
-                if not self.controller.easytier.start(network_name=self.room_name, network_secret=self.password):
-                    self.connected.emit(False, "网络连接失败")
-                    return
+                # 无节点
+                self.connected.emit(False, "请先配置节点")
+                return
             
             # 获取虚拟 IP
             virtual_ip = self.controller.easytier.virtual_ip

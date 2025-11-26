@@ -142,7 +142,7 @@ class PeerEditDialog(QDialog):
         
         self.peers_input = LineEdit()
         self.peers_input.setText(peers)
-        self.peers_input.setPlaceholderText("例如：tcp://39.104.85.218:11010")
+        self.peers_input.setPlaceholderText("例如tcp://public.easytier.cn:11010;udp://public.easytier.cn:11010")
         self.peers_input.setFixedHeight(36)
         peers_layout.addWidget(self.peers_input)
         
@@ -162,7 +162,7 @@ class PeerEditDialog(QDialog):
         hint_icon.setFixedSize(16, 16)
         hint_layout.addWidget(hint_icon)
         
-        hint_label = CaptionLabel("留空表示不使用公共节点")
+        hint_label = CaptionLabel("使用;分隔多个节点")
         hint_label.setStyleSheet("color: #666666; margin-left: 6px;")
         hint_layout.addWidget(hint_label)
         hint_layout.addStretch()

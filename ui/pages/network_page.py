@@ -34,6 +34,7 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
         self.devices_card_container = None  # 设备卡片容器
         self.discovery_thread = None  # 设备发现线程
         self.discovery_running = False  # 设备发现线程运行标志
+        self.selected_peer = None  # 当前选中的节点
         
         logger.info("开始初始化 NetworkInterface...")
         
@@ -47,6 +48,13 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
         # 设备列表刷新定时器（增加间隔到10秒，减少CPU占用）
         self.device_refresh_timer = QTimer()
         self.device_refresh_timer.timeout.connect(self.update_clients_list)
+        
+        # 公网IP检测定时器
+        self.public_ip_timer = QTimer()
+        self.public_ip_timer.timeout.connect(self._detect_public_ip)
+        
+        # 公网IP检测线程
+        self.public_ip_thread = None
         
         # 设置全局唯一的对象名称（必须）
         self.setObjectName("networkInterface")
@@ -87,17 +95,17 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
         content_layout.setVerticalSpacing(25)
         
         # 4个部分
-        # 1. 节点设置
+        # 1. 网络关联（先创建，因为节点设置需要引用connect_btn）
+        network_card = self.create_network_card()
+        content_layout.addWidget(network_card)
+        
+        # 2. 节点设置
         node_card = self.create_node_card()
         content_layout.addWidget(node_card)
         
-        # 2. 上传和下载流量
+        # 3. 上传和下载流量
         traffic_card = self.create_traffic_card()
         content_layout.addWidget(traffic_card)
-        
-        # 3. 网络关联
-        network_card = self.create_network_card()
-        content_layout.addWidget(network_card)
         
         # 4. 已连接的设备（四个正方形卡片）
         devices_card = self.create_devices_card_container()
@@ -114,11 +122,45 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(30, 0, 30, 0)
         
-        # IP地址显示
+        # 当前虚拟IP显示（左侧）
         self.current_ip_label = SubtitleLabel("当前 IP: 未连接")
         layout.addWidget(self.current_ip_label)
         
         layout.addStretch()
+        
+        # 公网IPv6显示区域(右侧,美化样式)
+        ipv6_container = QWidget()
+        ipv6_container.setStyleSheet("""
+            QWidget {
+                background-color: transparent;
+                border: none;
+            }
+        """)
+        ipv6_layout = QHBoxLayout(ipv6_container)
+        ipv6_layout.setContentsMargins(12, 8, 12, 8)
+        ipv6_layout.setSpacing(8)
+        
+        # IPv6图标
+        ipv6_icon = QLabel()
+        ipv6_icon.setFixedSize(24, 24)
+        ipv6_icon.setText("🌐")
+        ipv6_icon.setStyleSheet("font-size: 18px; background: transparent; border: none;")
+        ipv6_layout.addWidget(ipv6_icon)
+        
+        # IPv6文本标签
+        self.public_ipv6_label = SubtitleLabel("IPv6: 检测中...")
+        self.public_ipv6_address = ""  # 存储完整IPv6地址
+        ipv6_layout.addWidget(self.public_ipv6_label)
+        
+        # 设置容器点击事件和鼠标样式
+        ipv6_container.setCursor(Qt.PointingHandCursor)
+        ipv6_container.mousePressEvent = lambda e: self._on_ipv6_click()
+        self.ipv6_container = ipv6_container  # 保存引用
+        
+        layout.addWidget(ipv6_container)
+        
+        # 启动公网IP检测
+        self._start_public_ip_detection()
         
         return bar
     
@@ -136,22 +178,24 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
         card_layout.addWidget(title)
         
         # 节点选择
-        node_label = CaptionLabel("当前节点")
+        node_label = CaptionLabel("节点选择")
         node_label.setStyleSheet("color: #666;")
         card_layout.addWidget(node_label)
         
         self.node_combo = ComboBox()
-        self.node_combo.addItem("官方节点")
-        self.node_combo.setEnabled(False)
+        self.node_combo.currentIndexChanged.connect(self.on_node_changed)
         card_layout.addWidget(self.node_combo)
         
         card_layout.addStretch()
         
         # 配置按钮
-        config_btn = PushButton(FluentIcon.SETTING, "配置节点")
-        config_btn.setMinimumHeight(36)
-        config_btn.clicked.connect(self.show_peer_manager)
-        card_layout.addWidget(config_btn)
+        self.config_btn = PushButton(FluentIcon.SETTING, "配置节点")
+        self.config_btn.setMinimumHeight(36)
+        self.config_btn.clicked.connect(self.show_peer_manager)
+        card_layout.addWidget(self.config_btn)
+        
+        # 加载节点列表
+        self.load_nodes()
         
         return card
     
@@ -161,63 +205,67 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
         card.setFixedSize(320, 280)
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(24, 24, 24, 24)
-        card_layout.setSpacing(18)
+        card_layout.setSpacing(0)
         
         # 标题
         title = SubtitleLabel("流量统计")
         title.setStyleSheet("font-weight: 600; font-size: 16px;")
         card_layout.addWidget(title)
         
-        # 上传流量
-        upload_label = CaptionLabel("上传流量")
-        upload_label.setStyleSheet("color: #666;")
-        card_layout.addWidget(upload_label)
+        card_layout.addStretch()
         
+        # 上行流量（横向布局，居中）
         upload_row = QHBoxLayout()
-        # 使用PNG图标
+        upload_row.setSpacing(0)
+        upload_row.addStretch()
+        
+        # 上传图标（放大）
         upload_icon = QLabel()
-        upload_icon.setFixedSize(20, 20)
+        upload_icon.setFixedSize(64, 64)
         upload_icon.setAlignment(Qt.AlignCenter)
         upload_icon_path = str(Config.RESOURCES_DIR / "icons" / "upload.png")
         if os.path.exists(upload_icon_path):
             pixmap = QPixmap(upload_icon_path)
-            upload_icon.setPixmap(pixmap.scaled(20, 20, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            upload_icon.setPixmap(pixmap.scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         upload_row.addWidget(upload_icon)
         
-        self.upload_value = BodyLabel("0 MB")
-        self.upload_value.setStyleSheet("color: #0078d4; font-weight: 600; font-size: 15px;")
+        upload_row.addSpacing(30)
+        
+        # 上行数据
+        self.upload_value = BodyLabel("0 KB/s")
+        self.upload_value.setStyleSheet("color: #0078d4; font-weight: bold; font-size: 28px;")
+        self.upload_value.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         upload_row.addWidget(self.upload_value)
         upload_row.addStretch()
         
-        self.upload_speed = CaptionLabel("0 KB/s")
-        self.upload_speed.setStyleSheet("color: #999;")
-        upload_row.addWidget(self.upload_speed)
         card_layout.addLayout(upload_row)
         
-        # 下载流量
-        download_label = CaptionLabel("下载流量")
-        download_label.setStyleSheet("color: #666;")
-        card_layout.addWidget(download_label)
+        card_layout.addSpacing(30)
         
+        # 下行流量（横向布局，居中）
         download_row = QHBoxLayout()
-        # 使用PNG图标
+        download_row.setSpacing(0)
+        download_row.addStretch()
+        
+        # 下载图标（放大）
         download_icon = QLabel()
-        download_icon.setFixedSize(20, 20)
+        download_icon.setFixedSize(64, 64)
         download_icon.setAlignment(Qt.AlignCenter)
         download_icon_path = str(Config.RESOURCES_DIR / "icons" / "download.png")
         if os.path.exists(download_icon_path):
             pixmap = QPixmap(download_icon_path)
-            download_icon.setPixmap(pixmap.scaled(20, 20, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            download_icon.setPixmap(pixmap.scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         download_row.addWidget(download_icon)
         
-        self.download_value = BodyLabel("0 MB")
-        self.download_value.setStyleSheet("color: #10893e; font-weight: 600; font-size: 15px;")
+        download_row.addSpacing(30)
+        
+        # 下行数据
+        self.download_value = BodyLabel("0 KB/s")
+        self.download_value.setStyleSheet("color: #10893e; font-weight: bold; font-size: 28px;")
+        self.download_value.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         download_row.addWidget(self.download_value)
         download_row.addStretch()
         
-        self.download_speed = CaptionLabel("0 KB/s")
-        self.download_speed.setStyleSheet("color: #999;")
-        download_row.addWidget(self.download_speed)
         card_layout.addLayout(download_row)
         
         card_layout.addStretch()
@@ -469,10 +517,55 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
         timer.start(500)  # 从300ms增加到50 0ms，减少更新频率
         label.scroll_timer = timer  # 保存引用防止被回收
     
+    def load_nodes(self):
+        """加载节点列表到下拉框"""
+        self.node_combo.clear()
+        peer_list = self.parent_window.config_data.get("peer_list", [])
+        
+        if not peer_list:
+            self.node_combo.addItem("请配置节点")
+            self.node_combo.setEnabled(False)
+            self.selected_peer = None
+        else:
+            self.node_combo.setEnabled(True)
+            for peer in peer_list:
+                self.node_combo.addItem(peer['name'])
+            # 默认选中第一个节点
+            if len(peer_list) > 0:
+                self.node_combo.setCurrentIndex(0)
+                self.selected_peer = peer_list[0]
+        
+        # 更新按钮状态
+        self.update_button_states()
+    
+    def on_node_changed(self, index):
+        """节点选择改变事件"""
+        peer_list = self.parent_window.config_data.get("peer_list", [])
+        if index >= 0 and index < len(peer_list):
+            self.selected_peer = peer_list[index]
+        else:
+            self.selected_peer = None
+        
+        # 更新按钮状态
+        self.update_button_states()
+    
+    def update_button_states(self):
+        """更新按钮状态（根据是否有有效节点）"""
+        # 检查按钮是否已创建
+        if not hasattr(self, 'connect_btn') or not hasattr(self, 'config_btn'):
+            return
+        
+        has_valid_node = self.selected_peer is not None and bool(self.selected_peer.get('peers', ''))
+        
+        # 只控制连接按钮的启用/禁用状态，不改变颜色
+        self.connect_btn.setEnabled(has_valid_node)
+    
     def show_peer_manager(self):
         """显示节点管理器"""
         dialog = PeerManagerDialog(self.parent_window, self.parent_window.config_data)
-        dialog.exec_()
+        if dialog.exec_():
+            # 节点配置可能已更改，重新加载
+            self.load_nodes()
     
     def connect_to_network(self):
         """连接到网络"""
@@ -498,12 +591,25 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
         }
         ConfigCache.save(self.parent_window.config_data)
         
-        # 启动连接线程（固定使用官方节点）
+        # 检查是否有有效节点
+        if not self.selected_peer or not self.selected_peer.get('peers', ''):
+            InfoBar.warning(
+                title='节点错误',
+                content="请先配置有效节点",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2000,
+                parent=self
+            )
+            return
+        
+        # 启动连接线程（使用选中的节点）
         self.parent_window.connect_thread = ConnectThread(
             self.parent_window.controller, 
             room_name, 
             password, 
-            None,  # selected_peer
+            self.selected_peer,  # 传入选中的节点
             True   # use_peer
         )
         self.parent_window.connect_thread.connected.connect(self.on_connected)
@@ -748,8 +854,6 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
                 )
                 self.devices_layout.addWidget(device_card)
                 self.device_widgets.append(device_card)
-            
-            logger.info(f"更新客户端列表: 总计 {len(devices)} 台设备")
         except Exception as e:
             logger.error(f"更新客户端列表失败: {e}")
             import traceback
@@ -928,17 +1032,13 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
             # 获取流量统计
             stats = self.parent_window.controller.easytier.get_traffic_stats()
             
-            # 格式化流量显示
-            tx_bytes = stats.get('tx_bytes', 0)
-            rx_bytes = stats.get('rx_bytes', 0)
+            # 格式化流量显示（显示实时速度）
             tx_speed = stats.get('tx_speed', 0)
             rx_speed = stats.get('rx_speed', 0)
             
             # 转换为合适的单位
-            self.upload_value.setText(self._format_bytes(tx_bytes))
-            self.download_value.setText(self._format_bytes(rx_bytes))
-            self.upload_speed.setText(self._format_speed(tx_speed))
-            self.download_speed.setText(self._format_speed(rx_speed))
+            self.upload_value.setText(self._format_speed(tx_speed))
+            self.download_value.setText(self._format_speed(rx_speed))
             
         except Exception as e:
             logger.error(f"更新流量统计失败: {e}")
@@ -962,3 +1062,224 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
             return f"{speed_bytes_per_sec / 1024:.2f} KB/s"
         else:
             return f"{speed_bytes_per_sec / 1024 / 1024:.2f} MB/s"
+    
+    def _start_public_ip_detection(self):
+        """启动公网IP检测（后台线程）"""
+        import threading
+        
+        def detection_worker():
+            """公网IP检测线程"""
+            self._detect_public_ip()
+            # 启动定时器，每5分钟检测一次
+            self.public_ip_timer.start(300000)  # 5分钟
+        
+        # 在后台线程中执行首次检测
+        self.public_ip_thread = threading.Thread(target=detection_worker, daemon=True)
+        self.public_ip_thread.start()
+    
+    def _detect_public_ip(self):
+        """检测公网IPv6地址"""
+        import requests
+        import threading
+        
+        def detect_ipv6():
+            """检测公网IPv6"""
+            try:
+                # 使用IPv6专用API服务
+                apis = [
+                    'https://api6.ipify.org?format=text',
+                    'https://ipv6.icanhazip.com',
+                ]
+                
+                for api in apis:
+                    try:
+                        response = requests.get(api, timeout=5)
+                        if response.status_code == 200:
+                            ipv6 = response.text.strip()
+                            # 验证是否为有效的IPv6地址（包含冒号）
+                            if ipv6 and ':' in ipv6:
+                                self.public_ipv6_address = ipv6
+                                # 只显示提示文字,不显示地址
+                                self.public_ipv6_label.setText("你的电脑有IPv6公网 (点击查看详情或复制)")
+                                self.public_ipv6_label.setStyleSheet("color: #10893e; font-weight: 600;")
+                                # 更新容器样式为成功状态(无边框)
+                                self.ipv6_container.setStyleSheet("""
+                                    QWidget {
+                                        background: transparent;
+                                        border: none;
+                                    }
+                                """)
+                                self.ipv6_container.setToolTip("点击查看使用方法或复制IPv6地址")
+                                return
+                    except:
+                        continue
+                
+                # 所有API都失败
+                self.public_ipv6_address = ""
+                self.public_ipv6_label.setText("你的电脑不支持IPv6 (点击查看设置教程)")
+                self.public_ipv6_label.setStyleSheet("color: #d13438; font-weight: 500;")
+                # 更新容器样式为失败状态(无边框)
+                self.ipv6_container.setStyleSheet("""
+                    QWidget {
+                        background: transparent;
+                        border: none;
+                    }
+                """)
+                self.ipv6_container.setToolTip("点击查看如何开通IPv6")
+            except Exception as e:
+                logger.warning(f"检测公网IPv6失败: {e}")
+                self.public_ipv6_address = ""
+                self.public_ipv6_label.setText("检测失败")
+                self.public_ipv6_label.setStyleSheet("color: #999;")
+                # 更新容器样式为中性状态(无边框)
+                self.ipv6_container.setStyleSheet("""
+                    QWidget {
+                        background: transparent;
+                        border: none;
+                    }
+                """)
+                self.ipv6_container.setToolTip("")
+        
+        # 启动IPv6检测线程
+        ipv6_thread = threading.Thread(target=detect_ipv6, daemon=True)
+        ipv6_thread.start()
+    
+    def _on_ipv6_click(self):
+        """点击IPv6标签时的处理"""
+        import webbrowser
+        from PyQt5.QtWidgets import QVBoxLayout, QHBoxLayout
+        
+        if self.public_ipv6_address:
+            # 有IPv6地址,显示详细信息
+            dialog = FluentMessageBox(
+                title="IPv6公网信息",
+                content="",  # 内容留空,我们自定义布局
+                parent=self
+            )
+            
+            # 自定义对话框内容
+            content_widget = QWidget()
+            content_layout = QVBoxLayout(content_widget)
+            content_layout.setSpacing(15)
+            content_layout.setContentsMargins(0, 0, 0, 0)
+            
+            # 标题
+            title_label = SubtitleLabel("✓ 你的电脑有IPv6公网")
+            title_label.setStyleSheet("color: #10893e; font-weight: 600;")
+            content_layout.addWidget(title_label)
+            
+            # IPv6地址显示
+            ipv6_container = QWidget()
+            ipv6_layout = QVBoxLayout(ipv6_container)
+            ipv6_layout.setSpacing(5)
+            
+            ipv6_title = BodyLabel("当前IPv6地址:")
+            ipv6_title.setStyleSheet("color: #666; font-weight: 600;")
+            ipv6_layout.addWidget(ipv6_title)
+            
+            ipv6_addr = BodyLabel(self.public_ipv6_address)
+            ipv6_addr.setStyleSheet("""
+                color: #0078d4;
+                font-family: 'Consolas', 'Courier New', monospace;
+                font-size: 14px;
+                padding: 8px;
+                background-color: #f5f5f5;
+                border-radius: 4px;
+            """)
+            ipv6_layout.addWidget(ipv6_addr)
+            content_layout.addWidget(ipv6_container)
+            
+            # 优势说明
+            advantages_label = BodyLabel("优势说明:")
+            advantages_label.setStyleSheet("color: #666; font-weight: 600;")
+            content_layout.addWidget(advantages_label)
+            
+            adv1 = BodyLabel("• 设备间可直接连接,无需中转")
+            adv1.setStyleSheet("color: #333;")
+            content_layout.addWidget(adv1)
+            
+            adv2 = BodyLabel("• 更低延迟,更快速度")
+            adv2.setStyleSheet("color: #333;")
+            content_layout.addWidget(adv2)
+            
+            adv3 = BodyLabel("• 更好的隐私保护")
+            adv3.setStyleSheet("color: #333;")
+            content_layout.addWidget(adv3)
+            
+            # 将自定义内容添加到对话框
+            dialog.textLayout.addWidget(content_widget)
+            
+            # 设置按钮文字
+            dialog.yesButton.setText("查看方法")
+            dialog.cancelButton.setText("复制IPv6")
+            
+            if dialog.exec():
+                # 点击查看方法,打开网页
+                webbrowser.open("https://ipw.cn/doc/ipv6/user/enable_ipv6.html")
+                logger.info("打开IPv6配置文档")
+            else:
+                # 点击复制IPv6
+                from PyQt5.QtWidgets import QApplication
+                QApplication.clipboard().setText(self.public_ipv6_address)
+                InfoBar.success(
+                    title='✓ 已复制',
+                    content=f"IPv6地址已复制到剪贴板\n{self.public_ipv6_address}",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=3000,
+                    parent=self
+                )
+                logger.info(f"已复制公网IPv6: {self.public_ipv6_address}")
+        else:
+            # 没有IPv6地址,显示帮助信息
+            dialog = FluentMessageBox(
+                title="IPv6设置帮助",
+                content="",  # 内容留空,我们自定义布局
+                parent=self
+            )
+            
+            # 自定义对话框内容
+            content_widget = QWidget()
+            content_layout = QVBoxLayout(content_widget)
+            content_layout.setSpacing(15)
+            content_layout.setContentsMargins(0, 0, 0, 0)
+            
+            # 标题
+            title_label = SubtitleLabel("✗ 你的电脑不支持IPv6")
+            title_label.setStyleSheet("color: #d13438; font-weight: 600;")
+            content_layout.addWidget(title_label)
+            
+            # 说明
+            desc_label = BodyLabel("您的网络环境暂不支持IPv6连接")
+            desc_label.setStyleSheet("color: #666;")
+            content_layout.addWidget(desc_label)
+            
+            # 如何启用
+            how_label = BodyLabel("如何启用IPv6:")
+            how_label.setStyleSheet("color: #666; font-weight: 600;")
+            content_layout.addWidget(how_label)
+            
+            step1 = BodyLabel("1. 联系您的网络运营商开通IPv6")
+            step1.setStyleSheet("color: #333;")
+            content_layout.addWidget(step1)
+            
+            step2 = BodyLabel("2. 检查路由器是否启用IPv6")
+            step2.setStyleSheet("color: #333;")
+            content_layout.addWidget(step2)
+            
+            step3 = BodyLabel("3. 确认系统网络设置正确")
+            step3.setStyleSheet("color: #333;")
+            content_layout.addWidget(step3)
+            
+            # 将自定义内容添加到对话框
+            dialog.textLayout.addWidget(content_widget)
+            
+            # 设置按钮文字
+            dialog.yesButton.setText("查看IPv6设置")
+            dialog.cancelButton.setText("关闭")
+            
+            if dialog.exec():
+                # 点击查看IPv6设置,打开网页
+                webbrowser.open("https://ipw.cn/doc/ipv6/user/enable_ipv6.html")
+                logger.info("打开IPv6配置文档")
