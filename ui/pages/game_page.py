@@ -1986,8 +1986,8 @@ class GameInterface(QWidget):
         # 立即广播一次
         broadcast_server_info()
         
-        # 创建定时器，每3秒广播一次
-        self.broadcast_timer = QTimer()
+        # 创建定时器，每3秒广播一次（设置self为父对象）
+        self.broadcast_timer = QTimer(self)
         self.broadcast_timer.timeout.connect(broadcast_server_info)
         self.broadcast_timer.start(3000)  # 3秒
         logger.info(f"📡 已启动主机广播定时器，每3秒广播一次 (game={game_name}, port={port})")
@@ -2035,8 +2035,8 @@ class GameInterface(QWidget):
             except Exception as e:
                 logger.error(f"广播启动中消息失败: {e}")
         
-        # 创建定时器，每5秒广播一次
-        self.starting_broadcast_timer = QTimer()
+        # 创建定时器，每5秒广播一次（设置self为父对象）
+        self.starting_broadcast_timer = QTimer(self)
         self.starting_broadcast_timer.timeout.connect(broadcast_starting)
         self.starting_broadcast_timer.start(5000)  # 5秒
         logger.info("已启动'启动中'广播定时器，每5秒广播一次")
