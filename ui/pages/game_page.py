@@ -1915,8 +1915,17 @@ class GameInterface(QWidget):
         def broadcast_server_info():
             """broadcast服务器信息"""
             try:
+                logger.info(f"⏰ 定时器触发 - is_host={self.is_host}, game_port={self.game_port}")
+                
                 if not self.is_host:
                     # 已经不是主机了，停止广播
+                    logger.warning("⚠️ is_host=False，停止广播")
+                    self._stop_host_broadcast()
+                    return
+                
+                if not self.game_port:
+                    # 游戏端口不存在，停止广播
+                    logger.warning("⚠️ game_port为空，停止广播")
                     self._stop_host_broadcast()
                     return
                 
@@ -1937,6 +1946,8 @@ class GameInterface(QWidget):
                         }
                     )
                     logger.info(f"✅ 持续广播服务器信息: {virtual_ip}:{port}")
+                else:
+                    logger.warning("⚠️ tcp_broadcast不可用")
             except Exception as e:
                 logger.error(f"广播服务器信息失败: {e}")
         
@@ -1944,7 +1955,7 @@ class GameInterface(QWidget):
         self.broadcast_timer = QTimer()
         self.broadcast_timer.timeout.connect(broadcast_server_info)
         self.broadcast_timer.start(10000)  # 10秒
-        logger.info("已启动主机广播定时器，每10秒广播一次")
+        logger.info(f"📡 已启动主机广播定时器，每10秒广播一次 (game={game_name}, port={port})")
     
     def _stop_host_broadcast(self):
         """停止主机广播定时器"""
