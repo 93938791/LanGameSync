@@ -583,14 +583,24 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
             url = f"http://{peer_ip}:{Config.SYNCTHING_API_PORT}/rest/system/status"
             headers = {"X-API-Key": Config.SYNCTHING_API_KEY}
             
-            resp = requests.get(url, headers=headers, proxies=proxies, timeout=3)
+            logger.info(f"尝试通过SOCKS5访问: {url}")
+            resp = requests.get(url, headers=headers, proxies=proxies, timeout=5)
             resp.raise_for_status()
             
             device_id = resp.json()["myID"]
-            logger.debug(f"从 {peer_ip} 获取到设备ID: {device_id[:7]}...")
+            logger.info(f"✅ 成功从 {peer_ip} 获取到设备ID: {device_id[:7]}...")
             return device_id
+        except requests.exceptions.ProxyError as e:
+            logger.warning(f"❌ SOCKS5代理连接失败（{peer_ip}）: {e}")
+            return None
+        except requests.exceptions.Timeout:
+            logger.warning(f"❌ 连接到 {peer_ip} 超时（可能对方Syncthing还未启动）")
+            return None
+        except requests.exceptions.HTTPError as e:
+            logger.warning(f"❌ HTTP错误（{peer_ip}）: {e} - 可能是API Key不匹配")
+            return None
         except Exception as e:
-            logger.debug(f"无法从 {peer_ip} 获取Syncthing ID: {e}")
+            logger.warning(f"❌ 无法从 {peer_ip} 获取Syncthing ID: {type(e).__name__}: {e}")
             return None
     
     def show_all_devices(self):
