@@ -686,11 +686,30 @@ class GameLauncher:
             
             # 7. 添加自动连接服务器参数（优先级最高）
             if server_ip and server_port:
-                cmd.append('--server')
-                cmd.append(server_ip)
-                cmd.append('--port')
-                cmd.append(str(server_port))
-                logger.info(f"添加自动连接服务器: {server_ip}:{server_port}")
+                # 检查版本是否支持 quickPlayMultiplayer
+                version_parts = self.version.split('.')
+                try:
+                    major_version = int(version_parts[1]) if len(version_parts) > 1 else 0
+                    
+                    # 1.20+ 版本使用 --quickPlayMultiplayer
+                    if major_version >= 20:
+                        server_address = f"{server_ip}:{server_port}"
+                        cmd.append('--quickPlayMultiplayer')
+                        cmd.append(server_address)
+                        logger.info(f"添加自动连接服务器 (quickPlayMultiplayer): {server_address}")
+                    else:
+                        # 旧版本使用 --server 和 --port
+                        cmd.append('--server')
+                        cmd.append(server_ip)
+                        cmd.append('--port')
+                        cmd.append(str(server_port))
+                        logger.info(f"添加自动连接服务器 (server/port): {server_ip}:{server_port}")
+                except (ValueError, IndexError):
+                    logger.warning(f"无法解析版本号: {self.version}，使用旧版参数")
+                    cmd.append('--server')
+                    cmd.append(server_ip)
+                    cmd.append('--port')
+                    cmd.append(str(server_port))
             # 8. 添加自动进入世界参数（仅当未指定服务器时）
             elif world_name:
                 # 检查是否支持 quickPlay 参数

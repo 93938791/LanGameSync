@@ -932,10 +932,19 @@ class GameInterface(QWidget):
                                 # 启动进程监控
                                 self._start_process_monitor(game_name, world_name, player_name)
                                 
+                                # 【关键】先更新按钮状态：隐藏启动按钮，显示关闭按钮（在广播之前）
+                                from PyQt5.QtCore import QTimer
+                                QTimer.singleShot(0, lambda: self.launch_game_btn.setText("启动游戏"))
+                                QTimer.singleShot(0, lambda: self.launch_game_btn.setEnabled(True))
+                                QTimer.singleShot(0, lambda: self.launch_game_btn.setVisible(False))
+                                QTimer.singleShot(0, lambda: self.join_game_btn.setVisible(False))
+                                QTimer.singleShot(0, lambda: self.close_game_btn.setVisible(True))
+                                QTimer.singleShot(0, lambda: self.close_game_btn.setEnabled(True))
+                                logger.info("✅ 已更新按钮状态：显示'关闭游戏'按钮")
+                                
                                 # 广播游戏启动成功（其他人按钮变为"加入游戏"）
                                 if hasattr(self.parent_window, 'tcp_broadcast') and self.parent_window.tcp_broadcast:
                                     # 停止"启动中"广播
-                                    from PyQt5.QtCore import QTimer
                                     QTimer.singleShot(0, lambda: self._stop_starting_broadcast())
                                     
                                     # 获取本机EasyTier虚拟IP
@@ -956,20 +965,12 @@ class GameInterface(QWidget):
                                             "host_ip": virtual_ip
                                         }
                                     )
+                                    logger.info("📡 已广播游戏启动成功消息")
                                 else:
                                     logger.warning("tcp_broadcast 不存在！")
                                 
                                 # 启动定时广播（每3秒广播一次，让新加入的玩家快速发现服务器）
                                 self._start_host_broadcast(game_name, world_name, player_name, lan_port)
-                                
-                                # 更新按钮状态：隐藏启动按钮，显示关闭按钮
-                                from PyQt5.QtCore import QTimer
-                                QTimer.singleShot(0, lambda: self.launch_game_btn.setText("启动游戏"))
-                                QTimer.singleShot(0, lambda: self.launch_game_btn.setEnabled(True))
-                                QTimer.singleShot(0, lambda: self.launch_game_btn.setVisible(False))
-                                QTimer.singleShot(0, lambda: self.join_game_btn.setVisible(False))
-                                QTimer.singleShot(0, lambda: self.close_game_btn.setVisible(True))
-                                QTimer.singleShot(0, lambda: self.close_game_btn.setEnabled(True))
                                 
                                 QMetaObject.invokeMethod(
                                     self,
@@ -1922,18 +1923,21 @@ class GameInterface(QWidget):
         # 先停止旧的定时器
         self._stop_host_broadcast()
         
+        # 保存广播参数（避免依赖self.game_port等变量，防止线程同步问题）
+        broadcast_params = {
+            "game_name": game_name,
+            "world_name": world_name,
+            "player_name": player_name,
+            "port": port
+        }
+        
         def broadcast_server_info():
             """broadcast服务器信息"""
             try:
+                # 只检查 is_host，不检查 game_port（因为 port 已经通过参数传入）
                 if not self.is_host:
                     # 已经不是主机了，停止广播
                     logger.info("⚠️ is_host=False，停止广播")
-                    self._stop_host_broadcast()
-                    return
-                
-                if not self.game_port:
-                    # 游戏端口不存在，停止广播
-                    logger.info("⚠️ game_port为空，停止广播")
                     self._stop_host_broadcast()
                     return
                 
@@ -1946,13 +1950,14 @@ class GameInterface(QWidget):
                     self.parent_window.tcp_broadcast.publish(
                         "game/started",
                         {
-                            "game_name": game_name,
-                            "world_name": world_name,
-                            "player_name": player_name,
-                            "port": port,
+                            "game_name": broadcast_params["game_name"],
+                            "world_name": broadcast_params["world_name"],
+                            "player_name": broadcast_params["player_name"],
+                            "port": broadcast_params["port"],
                             "host_ip": virtual_ip
                         }
                     )
+                    logger.debug(f"📡 广播服务器信息: {broadcast_params['game_name']} @ {virtual_ip}:{broadcast_params['port']}")
                 else:
                     logger.warning("⚠️ tcp_broadcast不可用")
             except Exception as e:
