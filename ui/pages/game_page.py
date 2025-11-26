@@ -371,6 +371,26 @@ class GameInterface(QWidget):
         self.join_game_btn.setVisible(False)  # 默认隐藏
         layout.addWidget(self.join_game_btn)
         
+        # 关闭游戏按钮（默认隐藏）
+        self.close_game_btn = PrimaryPushButton(FluentIcon.CANCEL, "关闭游戏")
+        self.close_game_btn.setFixedHeight(40)
+        self.close_game_btn.clicked.connect(self.close_game)
+        self.close_game_btn.setVisible(False)  # 默认隐藏
+        self.close_game_btn.setStyleSheet("""
+            PrimaryPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #d13438,
+                    stop:1 #a61e22);
+                color: white;
+            }
+            PrimaryPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #a61e22,
+                    stop:1 #8b1a1d);
+            }
+        """)
+        layout.addWidget(self.close_game_btn)
+        
         # 启动同步
         self.sync_btn = PushButton(FluentIcon.SYNC, "启动同步")
         self.sync_btn.setFixedHeight(40)
@@ -921,8 +941,9 @@ class GameInterface(QWidget):
                                 
                                 # 恢复按钮状态（先恢复再显示消息）
                                 from PyQt5.QtCore import QTimer
-                                QTimer.singleShot(0, lambda: self.launch_game_btn.setEnabled(True))
-                                QTimer.singleShot(0, lambda: self.launch_game_btn.setText("启动游戏"))
+                                QTimer.singleShot(0, lambda: self.launch_game_btn.setVisible(False))
+                                QTimer.singleShot(0, lambda: self.close_game_btn.setVisible(True))
+                                QTimer.singleShot(0, lambda: self.close_game_btn.setEnabled(True))
                                 
                                 QMetaObject.invokeMethod(
                                     self,
@@ -1763,11 +1784,12 @@ class GameInterface(QWidget):
                 self.game_port = None
                 self.game_world = None
                 
-                # 恢复按钮状态（显示启动按钮，隐藏加入按钮）
+                # 恢复按钮状态（显示启动按钮，隐藏加入和关闭按钮）
                 from PyQt5.QtCore import QTimer
                 QTimer.singleShot(0, lambda: self.launch_game_btn.setVisible(True))
                 QTimer.singleShot(0, lambda: self.launch_game_btn.setEnabled(True))
                 QTimer.singleShot(0, lambda: self.join_game_btn.setVisible(False))
+                QTimer.singleShot(0, lambda: self.close_game_btn.setVisible(False))
                 
             except Exception as e:
                 logger.error(f"监控游戏进程失败: {e}")
@@ -1833,3 +1855,100 @@ class GameInterface(QWidget):
             self.broadcast_timer.deleteLater()
             self.broadcast_timer = None
             logger.info("已停止主机广播定时器")
+    
+    def close_game(self):
+        """关闭游戏进程"""
+        try:
+            if not self.game_process:
+                InfoBar.warning(
+                    title='提示',
+                    content="没有正在运行的游戏进程",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
+                return
+            
+            logger.info(f"准备关闭游戏进程 PID={self.game_process.pid}")
+            
+            # 先停止广播
+            self._stop_host_broadcast()
+            
+            # 终止游戏进程
+            import psutil
+            try:
+                process = psutil.Process(self.game_process.pid)
+                # 先尝试优雅关闭
+                process.terminate()
+                # 等待3秒
+                try:
+                    process.wait(timeout=3)
+                    logger.info("游戏进程已优雅关闭")
+                except psutil.TimeoutExpired:
+                    # 如果超时，强制杀死
+                    process.kill()
+                    logger.warning("游戏进程强制关闭")
+            except psutil.NoSuchProcess:
+                logger.warning("游戏进程已经不存在")
+            except Exception as e:
+                logger.error(f"关闭游戏进程失败: {e}")
+                # 如果psutil失败，尝试使用原始方法
+                try:
+                    self.game_process.terminate()
+                    self.game_process.wait(timeout=3)
+                except:
+                    self.game_process.kill()
+            
+            # 广播主机掉线消息
+            if self.is_host and hasattr(self.parent_window, 'tcp_broadcast') and self.parent_window.tcp_broadcast:
+                game_name = self.selected_game.get('name', '') if self.selected_game else ''
+                world_name = self.game_world or ''
+                player_name = self.selected_game.get('selected_account', {}).get('name', '') if self.selected_game else ''
+                
+                self.parent_window.tcp_broadcast.publish(
+                    "game/host_offline",
+                    {
+                        "game_name": game_name,
+                        "world_name": world_name,
+                        "player_name": player_name
+                    }
+                )
+                logger.info("已广播主机掉线消息")
+            
+            # 重置状态
+            self.is_host = False
+            self.game_process = None
+            self.game_port = None
+            self.game_world = None
+            
+            # 恢复按钮状态
+            self.launch_game_btn.setVisible(True)
+            self.launch_game_btn.setEnabled(True)
+            self.join_game_btn.setVisible(False)
+            self.close_game_btn.setVisible(False)
+            
+            InfoBar.success(
+                title='成功',
+                content="游戏已关闭",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2000,
+                parent=self
+            )
+            
+        except Exception as e:
+            logger.error(f"关闭游戏失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            InfoBar.error(
+                title='错误',
+                content=f"关闭游戏失败: {str(e)}",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2000,
+                parent=self
+            )
