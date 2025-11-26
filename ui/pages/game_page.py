@@ -959,15 +959,15 @@ class GameInterface(QWidget):
                                 else:
                                     logger.warning("tcp_broadcast 不存在！")
                                 
-                                # 启动定时广播（每10秒广播一次，让新加入的玩家知道服务器在运行）
+                                # 启动定时广播（每3秒广播一次，让新加入的玩家快速发现服务器）
                                 self._start_host_broadcast(game_name, world_name, player_name, lan_port)
                                 
-                                # 恢复按钮状态（先恢复再显示消息）
+                                # 更新按钮状态：隐藏启动按钮，显示关闭按钮
                                 from PyQt5.QtCore import QTimer
-                                # 恢复启动按钮的状态（虽然隐藏了，但下次显示时需要正常状态）
-                                QTimer.singleShot(0, lambda: self.launch_game_btn.setEnabled(True))
                                 QTimer.singleShot(0, lambda: self.launch_game_btn.setText("启动游戏"))
+                                QTimer.singleShot(0, lambda: self.launch_game_btn.setEnabled(True))
                                 QTimer.singleShot(0, lambda: self.launch_game_btn.setVisible(False))
+                                QTimer.singleShot(0, lambda: self.join_game_btn.setVisible(False))
                                 QTimer.singleShot(0, lambda: self.close_game_btn.setVisible(True))
                                 QTimer.singleShot(0, lambda: self.close_game_btn.setEnabled(True))
                                 
@@ -1909,7 +1909,7 @@ class GameInterface(QWidget):
     
     def _start_host_broadcast(self, game_name, world_name, player_name, port):
         """
-        启动主机广播定时器，每10秒广播一次服务器信息
+        启动主机广播定时器，每3秒广播一次服务器信息
         
         Args:
             game_name: 游戏名称
@@ -1925,17 +1925,15 @@ class GameInterface(QWidget):
         def broadcast_server_info():
             """broadcast服务器信息"""
             try:
-                logger.info(f"⏰ 定时器触发 - is_host={self.is_host}, game_port={self.game_port}")
-                
                 if not self.is_host:
                     # 已经不是主机了，停止广播
-                    logger.warning("⚠️ is_host=False，停止广播")
+                    logger.info("⚠️ is_host=False，停止广播")
                     self._stop_host_broadcast()
                     return
                 
                 if not self.game_port:
                     # 游戏端口不存在，停止广播
-                    logger.warning("⚠️ game_port为空，停止广播")
+                    logger.info("⚠️ game_port为空，停止广播")
                     self._stop_host_broadcast()
                     return
                 
@@ -1955,17 +1953,19 @@ class GameInterface(QWidget):
                             "host_ip": virtual_ip
                         }
                     )
-                    logger.info(f"✅ 持续广播服务器信息: {virtual_ip}:{port}")
                 else:
                     logger.warning("⚠️ tcp_broadcast不可用")
             except Exception as e:
                 logger.error(f"广播服务器信息失败: {e}")
         
-        # 创建定时器，每10秒广播一次
+        # 立即广播一次
+        broadcast_server_info()
+        
+        # 创建定时器，每3秒广播一次
         self.broadcast_timer = QTimer()
         self.broadcast_timer.timeout.connect(broadcast_server_info)
-        self.broadcast_timer.start(10000)  # 10秒
-        logger.info(f"📡 已启动主机广播定时器，每10秒广播一次 (game={game_name}, port={port})")
+        self.broadcast_timer.start(3000)  # 3秒
+        logger.info(f"📡 已启动主机广播定时器，每3秒广播一次 (game={game_name}, port={port})")
     
     def _stop_host_broadcast(self):
         """停止主机广播定时器"""
