@@ -525,7 +525,13 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
                     # 尝试获取远程设备的Syncthing ID
                     device_id = self._get_remote_syncthing_id(ipv4)
                     if device_id and device_id != self.parent_window.syncthing_manager.device_id:
-                        result = self.parent_window.syncthing_manager.add_device(device_id, hostname)
+                        # 添加设备到Syncthing（如果已存在则返回None）
+                        # 传递虚拟IP地址，使Syncthing可以通过虚拟网络连接
+                        result = self.parent_window.syncthing_manager.add_device(
+                            device_id=device_id,
+                            device_name=hostname,
+                            device_address=ipv4  # 传递虚拟IP
+                        )
                         # 只有新增成功时才打印日志（None表示已存在）
                         if result is True:
                             logger.info(f"自动发现并添加设备: {hostname} ({device_id[:7]}...) - {ipv4}")

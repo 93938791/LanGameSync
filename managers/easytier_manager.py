@@ -164,10 +164,15 @@ class EasytierManager:
                     parts = [p.strip() for p in line.split('|')]
                     logger.info(f"Local行分割结果 ({len(parts)}列): {parts}")
                     
-                    # 尝试从所有列中查找IP地址
+                    # 尝试从所有列中查找IPv4地址（排除IPv6）
                     for idx, part in enumerate(parts):
-                        if part and '.' in part and '/' in part:
-                            # 找到了IP地址
+                        # IPv4特征：包含点、包含斜杠、不包含冒号、有3个点
+                        if (part and 
+                            '.' in part and 
+                            '/' in part and 
+                            ':' not in part and  # 排除IPv6
+                            part.count('.') == 3):  # IPv4必须有3个点
+                            # 找到了IPv4地址
                             clean_ip = part.split('/')[0]
                             logger.info(f"在第{idx+1}列找到虚拟IP: {clean_ip}")
                             return clean_ip
@@ -273,8 +278,14 @@ class EasytierManager:
                     cost = parts[3].strip() if len(parts) > 3 else ''  # 第4列是cost(Local/p2p)
                     latency = parts[4].strip() if len(parts) > 4 else '0'  # 第5列是latency
                     
-                    # 只处理有IP地址的行，且排除本机（cost=Local）和公共服务器（无IP）
-                    if ipv4 and '.' in ipv4 and '/' in ipv4 and cost != 'Local':
+                    # 只处理有效的IPv4地址（格式：xxx.xxx.xxx.xxx/xx），且排除本机（cost=Local）
+                    # IPv4地址特征：包含3个点、包含斜杠、不包含冒号（排除IPv6）
+                    if (ipv4 and 
+                        '.' in ipv4 and 
+                        '/' in ipv4 and 
+                        ':' not in ipv4 and  # 排除IPv6地址（IPv6包含冒号）
+                        ipv4.count('.') == 3 and  # IPv4地址必须有3个点
+                        cost != 'Local'):
                         # 去掉子网掩码
                         ipv4_clean = ipv4.split('/')[0]
                         

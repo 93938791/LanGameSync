@@ -117,9 +117,11 @@ class SyncController:
         # 5. 将所有设备（除了本机）添加到 Syncthing
         for device in self.discovered_devices:
             if device["device_id"] != self.syncthing.device_id:
+                # 传递虚拟IP地址，使Syncthing可以通过虚拟网络连接
                 self.syncthing.add_device(
-                    device["device_id"],
-                    device["name"]
+                    device_id=device["device_id"],
+                    device_name=device["name"],
+                    device_address=device.get("ip")  # 传递虚拟IP
                 )
         
         remote_count = len(self.discovered_devices) - 1  # 除去本机
