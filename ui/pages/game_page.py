@@ -1936,7 +1936,7 @@ class GameInterface(QWidget):
                             "host_ip": virtual_ip
                         }
                     )
-                    logger.debug(f"广播服务器信息: {virtual_ip}:{port}")
+                    logger.info(f"✅ 持续广播服务器信息: {virtual_ip}:{port}")
             except Exception as e:
                 logger.error(f"广播服务器信息失败: {e}")
         
@@ -1985,7 +1985,7 @@ class GameInterface(QWidget):
                             "player_name": player_name
                         }
                     )
-                    logger.debug(f"持续广播游戏启动中: {game_name}/{world_name}")
+                    logger.info(f"⌚ 持续广播启动中: {game_name}/{world_name}")
             except Exception as e:
                 logger.error(f"广播启动中消息失败: {e}")
         
