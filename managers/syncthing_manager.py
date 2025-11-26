@@ -343,6 +343,40 @@ class SyncthingManager:
             logger.error(f"触发设备重连失败: {e}")
             return False
     
+    def restart_all_devices(self):
+        """触发所有设备重新连接（用于设备重新上线后重连）"""
+        try:
+            config = self.get_config()
+            if not config:
+                return False
+            
+            devices = config.get('devices', [])
+            if not devices:
+                logger.info("没有需要重连的设备")
+                return True
+            
+            logger.info(f"触发 {len(devices)} 个设备重新连接...")
+            
+            # 先暂停所有设备
+            for device in devices:
+                device['paused'] = True
+            self.set_config(config, async_mode=False)
+            
+            # 等待1秒
+            import time
+            time.sleep(1)
+            
+            # 再恢复所有设备
+            for device in devices:
+                device['paused'] = False
+            self.set_config(config, async_mode=False)
+            
+            logger.info("✅ 已触发所有设备重连")
+            return True
+        except Exception as e:
+            logger.error(f"触发设备重连失败: {e}")
+            return False
+    
     def api_request(self, endpoint, method="GET", data=None):
         """通用API请求方法"""
         try:

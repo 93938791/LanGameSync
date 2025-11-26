@@ -301,6 +301,9 @@ class SyncInterface(ScrollArea):
                 )
                 return
             
+            # 触发所有设备重连（用于设备重新上线后重连）
+            self.parent_window.syncthing_manager.restart_all_devices()
+            
             # 刷新同步文件夹列表
             self.refresh_folders()
             
