@@ -607,6 +607,12 @@ class SyncthingManager:
             folder_path.mkdir(parents=True, exist_ok=True)
             logger.info(f"创建同步目录: {folder_path}")
         
+        # 创建 .stfolder 标记文件夹（Syncthing 必需）
+        stfolder_marker = folder_path / ".stfolder"
+        if not stfolder_marker.exists():
+            stfolder_marker.mkdir(exist_ok=True)
+            logger.info(f"创建 .stfolder 标记文件夹: {stfolder_marker}")
+        
         config = self.get_config()
         if not config:
             return False
