@@ -39,12 +39,15 @@ class SyncthingManager:
         
         # 启动参数：禁用浏览器、禁用升级检查
         # gui-address=0.0.0.0 表示监听所有网络接口（包括虚拟网卡）
+        # listen-address 指定同步监听地址（默认tcp://0.0.0.0:22000）
         args = [
             "--no-browser",
             "--no-upgrade",
             f"--gui-address=0.0.0.0:{Config.SYNCTHING_API_PORT}",
             f"--gui-apikey={Config.SYNCTHING_API_KEY}",
-            "--home", str(Config.SYNCTHING_HOME)
+            "--home", str(Config.SYNCTHING_HOME),
+            # 明确指定同步端口监听所有接口，确保可以通过虚拟IP访问
+            "--listen-address", "tcp://0.0.0.0:22000"
         ]
         
         # 启动进程
@@ -65,6 +68,12 @@ class SyncthingManager:
         # 获取本机设备ID
         self.device_id = self.get_device_id()
         logger.info(f"Syncthing启动成功，设备ID: {self.device_id}")
+        
+        # 禁用本地发现和全局发现，强制只使用EasyTier虚拟IP
+        self._disable_discovery()
+        
+        # 启用所有设备的自动接受共享文件夹（多客户端同步必需）
+        self._enable_auto_accept_folders()
         
         # 启动事件监听
         self.start_event_listener()
@@ -111,6 +120,77 @@ class SyncthingManager:
         except Exception as e:
             logger.error(f"获取设备ID失败: {e}")
             return None
+    
+    def _disable_discovery(self):
+        """禁用Syncthing的本地发现和全局发现，强制只使用指定的虚拟IP地址"""
+        try:
+            config = self.get_config()
+            if not config:
+                logger.warning("无法获取配置，跳过禁用发现")
+                return False
+            
+            # 修改前记录原始状态
+            options = config.get('options', {})
+            original_local = options.get('localAnnounceEnabled', True)
+            original_global = options.get('globalAnnounceEnabled', True)
+            original_relay = options.get('relaysEnabled', True)
+            
+            # 禁用本地发现、全局发现和中继
+            options['localAnnounceEnabled'] = False  # 禁用本地发现（LAN）
+            options['globalAnnounceEnabled'] = False  # 禁用全局发现（互联网）
+            options['relaysEnabled'] = False  # 禁用中继服务器
+            options['natEnabled'] = False  # 禁用NAT穿透
+            options['urAccepted'] = -1  # 禁用匿名使用统计
+            
+            config['options'] = options
+            
+            # 同步保存配置（等待完成）
+            result = self.set_config(config, async_mode=False)
+            
+            if result:
+                logger.info(f"✅ 已禁用Syncthing自动发现：本地发现={original_local}→False, 全局发现={original_global}→False, 中继={original_relay}→False")
+                logger.info("🔒 强制只使用EasyTier虚拟IP进行连接")
+            else:
+                logger.warning("禁用发现失败")
+            
+            return result
+        except Exception as e:
+            logger.error(f"禁用发现失败: {e}")
+            return False
+    
+    def _enable_auto_accept_folders(self):
+        """启用所有设备的自动接受共享文件夹（多客户端同步必需）"""
+        try:
+            config = self.get_config()
+            if not config:
+                logger.warning("无法获取配置，跳过启用自动接受")
+                return False
+            
+            # 检查所有设备
+            devices = config.get('devices', [])
+            updated_count = 0
+            
+            for device in devices:
+                if not device.get('autoAcceptFolders', False):
+                    device['autoAcceptFolders'] = True
+                    updated_count += 1
+            
+            if updated_count > 0:
+                # 同步保存配置
+                result = self.set_config(config, async_mode=False)
+                if result:
+                    logger.info(f"✅ 已启用 {updated_count} 个设备的自动接受共享文件夹")
+                    logger.info("🔄 多客户端同步将自动工作")
+                    return True
+                else:
+                    logger.warning("启用自动接受失败")
+                    return False
+            else:
+                logger.info("✅ 所有设备已启用自动接受共享文件夹")
+                return True
+        except Exception as e:
+            logger.error(f"启用自动接受失败: {e}")
+            return False
     
     def api_request(self, endpoint, method="GET", data=None):
         """通用API请求方法"""
@@ -195,13 +275,17 @@ class SyncthingManager:
                 return None  # 返回None表示设备已存在，无需重复添加
         
         # 构造设备地址列表
-        addresses = ["dynamic"]  # 默认使用动态发现
+        # 只使用EasyTier虚拟IP，禁用dynamic发现（避免使用IPv6或其他地址）
         if device_address:
-            # 如果提供了虚拟IP，添加到地址列表前面（优先使用）
+            # 只使用虚拟IP，不使用dynamic（禁用本地发现、全局发现、中继）
             # Syncthing 默认端口是 22000
             tcp_address = f"tcp://{device_address}:22000"
-            addresses = [tcp_address, "dynamic"]
-            logger.info(f"使用虚拟IP地址: {tcp_address}")
+            addresses = [tcp_address]  # 只使用虚拟IP
+            logger.info(f"使用虚拟IP地址（禁用dynamic发现）: {tcp_address}")
+        else:
+            # 如果没有提供虚拟IP，使用dynamic
+            addresses = ["dynamic"]
+            logger.warning("未提供虚拟IP地址，使用dynamic发现")
         
         # 添加新设备
         new_device = {
@@ -211,7 +295,9 @@ class SyncthingManager:
             "compression": "metadata",
             "introducer": False,
             "skipIntroductionRemovals": False,
-            "paused": False
+            "paused": False,
+            # 自动接受共享文件夹（多客户端同步必需）
+            "autoAcceptFolders": True
         }
         
         config["devices"].append(new_device)

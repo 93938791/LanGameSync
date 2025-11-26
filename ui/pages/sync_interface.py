@@ -398,6 +398,17 @@ class SyncInterface(ScrollArea):
             if connections and connections.get('connections'):
                 connected_devices = connections['connections']
             
+            # 获取EasyTier对等设备列表（用于获取虚拟IP）
+            peer_ips = {}  # {hostname: ipv4}
+            if hasattr(self.parent_window, 'controller') and hasattr(self.parent_window.controller, 'easytier'):
+                peers = self.parent_window.controller.easytier.discover_peers(timeout=1)
+                if peers:
+                    for peer in peers:
+                        hostname = peer.get('hostname', '')
+                        ipv4 = peer.get('ipv4', '')
+                        if hostname and ipv4:
+                            peer_ips[hostname] = ipv4
+            
             device_count = 0
             
             # 1. 首先显示本机
@@ -411,8 +422,8 @@ class SyncInterface(ScrollArea):
                 name_item = QTableWidgetItem("💻 本机")
                 self.devices_table.setItem(row, 0, name_item)
                 
-                # 设备ID
-                id_item = QTableWidgetItem(f"{my_device_id[:7]}...")
+                # 设备ID（显示更多字符）
+                id_item = QTableWidgetItem(f"{my_device_id[:12]}...")
                 id_item.setTextAlignment(Qt.AlignCenter)
                 self.devices_table.setItem(row, 1, id_item)
                 
@@ -421,8 +432,7 @@ class SyncInterface(ScrollArea):
                 status_item.setTextAlignment(Qt.AlignCenter)
                 self.devices_table.setItem(row, 2, status_item)
                 
-                # 地址
-                # 获取虚拟IP
+                # 地址 - 获取虚拟IP
                 virtual_ip = "127.0.0.1"
                 if hasattr(self.parent_window, 'controller') and hasattr(self.parent_window.controller, 'easytier'):
                     virtual_ip = self.parent_window.controller.easytier.virtual_ip or "127.0.0.1"
@@ -448,8 +458,8 @@ class SyncInterface(ScrollArea):
                 name_item = QTableWidgetItem(device_name)
                 self.devices_table.setItem(row, 0, name_item)
                 
-                # 设备ID（显示简短版）
-                id_item = QTableWidgetItem(f"{device_id[:7]}...")
+                # 设备ID（显示更多字符）
+                id_item = QTableWidgetItem(f"{device_id[:12]}...")
                 id_item.setTextAlignment(Qt.AlignCenter)
                 self.devices_table.setItem(row, 1, id_item)
                 
@@ -465,13 +475,27 @@ class SyncInterface(ScrollArea):
                 status_item.setTextAlignment(Qt.AlignCenter)
                 self.devices_table.setItem(row, 2, status_item)
                 
-                # 地址
+                # 地址 - 优先从EasyTier对等列表获取虚拟IPv4地址
                 if is_connected:
-                    address = conn_info.get('address', '未知')
-                    # 只显示IP部分，去掉端口
-                    if ':' in address:
-                        address = address.rsplit(':', 1)[0]
-                    address_item = QTableWidgetItem(address)
+                    # 尝试从EasyTier对等列表中获取虚拟IP
+                    virtual_ip = peer_ips.get(device_name, '')
+                    
+                    if virtual_ip:
+                        # 找到了虚拟IP，使用它
+                        address_item = QTableWidgetItem(virtual_ip)
+                    else:
+                        # 没找到虚拟IP，从Syncthing连接信息获取并过滤IPv6
+                        address = conn_info.get('address', '未知')
+                        # 只显示IP部分，去掉端口
+                        if ':' in address:
+                            # 检查是否为IPv6（包含多个冒号）
+                            if address.count(':') > 1:
+                                # 这是IPv6地址，跳过
+                                address = "-"
+                            else:
+                                # 这是IPv4:port格式
+                                address = address.rsplit(':', 1)[0]
+                        address_item = QTableWidgetItem(address)
                 else:
                     address_item = QTableWidgetItem("-")
                 self.devices_table.setItem(row, 3, address_item)

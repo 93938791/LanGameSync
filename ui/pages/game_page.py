@@ -1127,6 +1127,16 @@ class GameInterface(QWidget):
                 )
                 return
             
+            # 获取已连接的设备列表
+            connections = self.parent_window.syncthing_manager.get_connections()
+            connected_device_ids = set()
+            if connections and connections.get('connections'):
+                for dev_id, conn_info in connections['connections'].items():
+                    if conn_info.get('connected'):
+                        connected_device_ids.add(dev_id)
+            
+            logger.info(f"当前在线设备数: {len(connected_device_ids)}")
+            
             # 检查文件夹是否已存在
             folder_exists = False
             for folder in config.get('folders', []):
@@ -1149,6 +1159,10 @@ class GameInterface(QWidget):
                         device_ids.append(dev_id)
                             
                 logger.info(f"将同步文件夹共享给 {len(device_ids)} 个设备")
+                
+                # 检查是否有在线设备
+                online_device_count = sum(1 for dev_id in device_ids if dev_id in connected_device_ids)
+                logger.info(f"其中在线设备: {online_device_count}/{len(device_ids)}")
                             
                 if len(device_ids) == 0:
                     InfoBar.warning(
@@ -1160,6 +1174,16 @@ class GameInterface(QWidget):
                         duration=3000,
                         parent=self
                     )
+                elif online_device_count == 0:
+                    InfoBar.warning(
+                        title='提示',
+                        content=f"检测到 {len(device_ids)} 个设备，但均未在线。同步将在设备上线后自动开始。",
+                        orient=Qt.Horizontal,
+                        isClosable=True,
+                        position=InfoBarPosition.TOP,
+                        duration=4000,
+                        parent=self
+                    )
                 
                 # 添加同步文件夹（直接启用）
                 success = self.parent_window.syncthing_manager.add_folder(
@@ -1168,7 +1192,7 @@ class GameInterface(QWidget):
                     folder_label=folder_label,
                     devices=device_ids,
                     paused=False,  # 直接启用同步
-                    async_mode=False
+                    async_mode=False  # 同步执行，确保配置成功
                 )
                 
                 if not success:
@@ -1179,6 +1203,33 @@ class GameInterface(QWidget):
                         isClosable=True,
                         position=InfoBarPosition.TOP,
                         duration=2000,
+                        parent=self
+                    )
+                    return
+                
+                # 等待Syncthing处理配置
+                import time
+                time.sleep(2)
+                
+                # 验证文件夹是否成功添加
+                config_verify = self.parent_window.syncthing_manager.get_config()
+                folder_added = False
+                if config_verify:
+                    for folder in config_verify.get('folders', []):
+                        if folder.get('id') == folder_id:
+                            folder_added = True
+                            is_paused = folder.get('paused', True)
+                            logger.info(f"文件夹已添加: {folder_id}, 暂停状态: {is_paused}")
+                            break
+                
+                if not folder_added:
+                    InfoBar.error(
+                        title='错误',
+                        content="文件夹配置验证失败，请检查Syncthing状态",
+                        orient=Qt.Horizontal,
+                        isClosable=True,
+                        position=InfoBarPosition.TOP,
+                        duration=3000,
                         parent=self
                     )
                     return
