@@ -304,9 +304,6 @@ class SyncInterface(ScrollArea):
             # 更新设备地址（用于设备IP变化后重新配置）
             self._update_device_addresses()
             
-            # 触发所有设备重连（用于设备重新上线后重连）
-            self.parent_window.syncthing_manager.restart_all_devices()
-            
             # 刷新同步文件夹列表
             self.refresh_folders()
             
