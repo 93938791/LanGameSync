@@ -868,6 +868,13 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
         if not self.parent_window.is_connected:
             return
         
+        # 检查 controller 和 easytier 是否存在
+        if not hasattr(self.parent_window, 'controller') or not self.parent_window.controller:
+            return
+        
+        if not hasattr(self.parent_window.controller, 'easytier') or not self.parent_window.controller.easytier:
+            return
+        
         try:
             # 获取流量统计
             stats = self.parent_window.controller.easytier.get_traffic_stats()
