@@ -50,6 +50,10 @@ class SyncInterface(ScrollArea):
         # Syncthing 同步卡片（让卡片占满剩余空间）
         sync_card = self.create_sync_card()
         self.vBoxLayout.addWidget(sync_card, 1)  # stretch=1，让卡片占据剩余空间
+        
+        # 已连接设备卡片
+        device_card = self.create_device_card()
+        self.vBoxLayout.addWidget(device_card)
     
     def create_sync_card(self):
         """创建同步目录卡片"""
@@ -135,6 +139,74 @@ class SyncInterface(ScrollArea):
         
         return card
     
+    def create_device_card(self):
+        """创建已连接设备卡片"""
+        card = CardWidget()
+        card.setStyleSheet("""
+            CardWidget {
+                background: white;
+                border: none;
+                border-radius: 8px;
+            }
+        """)
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(24, 24, 24, 24)
+        card_layout.setSpacing(20)
+        
+        # 标题
+        title = BodyLabel("🔗 已连接设备")
+        title.setStyleSheet("font-size: 15px; font-weight: 600; background: transparent; border: none;")
+        card_layout.addWidget(title)
+        
+        # 设备表格
+        self.devices_table = TableWidget()
+        self.devices_table.setColumnCount(4)
+        self.devices_table.setHorizontalHeaderLabels(["设备名称", "设备ID", "状态", "地址"])
+        
+        # 设置表格样式
+        self.devices_table.setStyleSheet("""
+            TableWidget {
+                background: white;
+                border: none;
+                border-radius: 4px;
+            }
+            QTableWidget::item {
+                border: none;
+                padding: 8px;
+                background: transparent;
+            }
+            QTableWidget::item:selected {
+                background: #f0f0f0;
+            }
+            QHeaderView::section {
+                background: #f5f5f5;
+                border: none;
+                padding: 8px;
+                font-weight: 600;
+            }
+        """)
+        
+        self.devices_table.setMinimumHeight(150)
+        self.devices_table.setMaximumHeight(250)
+        card_layout.addWidget(self.devices_table)
+        
+        # 空状态提示
+        self.device_empty_hint = BodyLabel("暂无已连接设备\n\n请确保其他设备已加入网络")
+        self.device_empty_hint.setAlignment(Qt.AlignCenter)
+        self.device_empty_hint.setStyleSheet("""
+            QLabel {
+                color: #999;
+                font-size: 14px;
+                background: transparent;
+                border: none;
+                padding: 40px;
+            }
+        """)
+        card_layout.addWidget(self.device_empty_hint)
+        self.devices_table.hide()
+        
+        return card
+    
     def pause_all_sync(self):
         """暂停所有同步"""
         try:
@@ -207,7 +279,7 @@ class SyncInterface(ScrollArea):
             )
     
     def refresh_sync(self):
-        """刷新同步列表"""
+        """刷新同步列表和设备列表"""
         try:
             if not hasattr(self.parent_window, 'syncthing_manager') or not self.parent_window.syncthing_manager:
                 InfoBar.warning(
@@ -221,6 +293,20 @@ class SyncInterface(ScrollArea):
                 )
                 return
             
+            # 刷新同步文件夹列表
+            self.refresh_folders()
+            
+            # 刷新设备列表
+            self.refresh_devices()
+            
+        except Exception as e:
+            logger.error(f"刷新失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+    
+    def refresh_folders(self):
+        """刷新同步文件夹列表"""
+        try:
             # 清空表格
             self.sync_folders_table.setRowCount(0)
             
@@ -282,17 +368,121 @@ class SyncInterface(ScrollArea):
                 self.sync_folders_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
                 self.sync_folders_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
                 self.sync_folders_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
-                
-                InfoBar.success(
-                    title='刷新',
-                    content=f"已刷新 {len(folders)} 个同步文件夹",
-                    orient=Qt.Horizontal,
-                    isClosable=True,
-                    position=InfoBarPosition.TOP,
-                    duration=1500,
-                    parent=self
-                )
         except Exception as e:
-            logger.error(f"刷新同步列表失败: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
+            logger.error(f"刷新同步文件夹列表失败: {e}")
+    
+    def refresh_devices(self):
+        """刷新已连接设备列表"""
+        try:
+            # 清空表格
+            self.devices_table.setRowCount(0)
+            
+            # 获取配置
+            config = self.parent_window.syncthing_manager.get_config()
+            if not config:
+                self.devices_table.hide()
+                self.device_empty_hint.show()
+                return
+            
+            # 获取连接状态
+            connections = self.parent_window.syncthing_manager.get_connections()
+            connected_devices = {}
+            if connections and connections.get('connections'):
+                connected_devices = connections['connections']
+            
+            device_count = 0
+            
+            # 1. 首先显示本机
+            my_device_id = self.parent_window.syncthing_manager.device_id
+            if my_device_id:
+                device_count += 1
+                row = self.devices_table.rowCount()
+                self.devices_table.insertRow(row)
+                
+                # 设备名称
+                name_item = QTableWidgetItem("💻 本机")
+                self.devices_table.setItem(row, 0, name_item)
+                
+                # 设备ID
+                id_item = QTableWidgetItem(f"{my_device_id[:7]}...")
+                id_item.setTextAlignment(Qt.AlignCenter)
+                self.devices_table.setItem(row, 1, id_item)
+                
+                # 状态
+                status_item = QTableWidgetItem("✅ 在线")
+                status_item.setTextAlignment(Qt.AlignCenter)
+                self.devices_table.setItem(row, 2, status_item)
+                
+                # 地址
+                # 获取虚拟IP
+                virtual_ip = "127.0.0.1"
+                if hasattr(self.parent_window, 'controller') and hasattr(self.parent_window.controller, 'easytier'):
+                    virtual_ip = self.parent_window.controller.easytier.virtual_ip or "127.0.0.1"
+                address_item = QTableWidgetItem(virtual_ip)
+                self.devices_table.setItem(row, 3, address_item)
+            
+            # 2. 显示其他设备
+            devices = config.get('devices', [])
+            
+            for device in devices:
+                device_id = device.get('deviceID')
+                device_name = device.get('name', device_id[:7] if device_id else '未知')
+                
+                # 跳过本机
+                if device_id == my_device_id:
+                    continue
+                
+                device_count += 1
+                row = self.devices_table.rowCount()
+                self.devices_table.insertRow(row)
+                
+                # 设备名称
+                name_item = QTableWidgetItem(device_name)
+                self.devices_table.setItem(row, 0, name_item)
+                
+                # 设备ID（显示简短版）
+                id_item = QTableWidgetItem(f"{device_id[:7]}...")
+                id_item.setTextAlignment(Qt.AlignCenter)
+                self.devices_table.setItem(row, 1, id_item)
+                
+                # 检查设备是否已连接
+                conn_info = connected_devices.get(device_id, {})
+                is_connected = conn_info.get('connected', False)
+                
+                # 状态
+                if is_connected:
+                    status_item = QTableWidgetItem("✅ 在线")
+                else:
+                    status_item = QTableWidgetItem("⚪ 离线")
+                status_item.setTextAlignment(Qt.AlignCenter)
+                self.devices_table.setItem(row, 2, status_item)
+                
+                # 地址
+                if is_connected:
+                    address = conn_info.get('address', '未知')
+                    # 只显示IP部分，去掉端口
+                    if ':' in address:
+                        address = address.rsplit(':', 1)[0]
+                    address_item = QTableWidgetItem(address)
+                else:
+                    address_item = QTableWidgetItem("-")
+                self.devices_table.setItem(row, 3, address_item)
+            
+            # 根据是否有设备显示不同内容
+            if device_count == 0:
+                self.devices_table.hide()
+                self.device_empty_hint.show()
+            else:
+                self.device_empty_hint.hide()
+                self.devices_table.show()
+                
+                # 调整列宽
+                from PyQt5.QtWidgets import QHeaderView
+                self.devices_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+                self.devices_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+                self.devices_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+                self.devices_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+                
+                logger.info(f"设备列表: 总计 {device_count} 个设备")
+        except Exception as e:
+            logger.error(f"刷新设备列表失败: {e}")

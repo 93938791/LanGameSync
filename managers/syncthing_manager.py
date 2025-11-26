@@ -179,6 +179,9 @@ class SyncthingManager:
             device_id: 设备ID
             device_name: 设备名称
             async_mode: 是否异步执行（默认True，避免阻塞主程序）
+            
+        Returns:
+            bool: True-新增成功, False-失败, None-设备已存在
         """
         config = self.get_config()
         if not config:
@@ -187,8 +190,8 @@ class SyncthingManager:
         # 检查设备是否已存在
         for device in config.get("devices", []):
             if device["deviceID"] == device_id:
-                logger.info(f"设备已存在: {device_id}")
-                return True
+                logger.debug(f"设备已存在: {device_id}")
+                return None  # 返回None表示设备已存在，无需重复添加
         
         # 添加新设备
         new_device = {
@@ -202,6 +205,7 @@ class SyncthingManager:
         }
         
         config["devices"].append(new_device)
+        logger.info(f"添加新设备: {device_name or device_id[:7]} ({device_id[:7]}...)")
         
         return self.set_config(config, async_mode=async_mode)
     

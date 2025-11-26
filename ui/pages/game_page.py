@@ -1224,7 +1224,7 @@ class GameInterface(QWidget):
             )
     
     def stop_sync(self):
-        """停止同步"""
+        """停止同步（暂停文件夹，不删除配置）"""
         from utils.config_cache import ConfigCache
         
         try:
@@ -1232,9 +1232,9 @@ class GameInterface(QWidget):
             if not folder_id:
                 return
             
-            # 移除同步文件夹
+            # 暂停同步文件夹（而不是删除）
             if hasattr(self.parent_window, 'syncthing_manager') and self.parent_window.syncthing_manager:
-                self.parent_window.syncthing_manager.remove_folder(folder_id)
+                self.parent_window.syncthing_manager.pause_folder(folder_id)
             
             # 更新状态
             self.selected_game['is_syncing'] = False

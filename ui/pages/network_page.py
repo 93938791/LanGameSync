@@ -524,8 +524,12 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
                     # 尝试获取远程设备的Syncthing ID
                     device_id = self._get_remote_syncthing_id(ipv4)
                     if device_id and device_id != self.parent_window.syncthing_manager.device_id:
-                        self.parent_window.syncthing_manager.add_device(device_id, hostname)
-                        logger.info(f"已添加设备到Syncthing: {hostname} ({device_id[:7]}...)")
+                        result = self.parent_window.syncthing_manager.add_device(device_id, hostname)
+                        # 只有新增成功时才打印日志（None表示已存在）
+                        if result is True:
+                            logger.info(f"自动发现并添加设备: {hostname} ({device_id[:7]}...) - {ipv4}")
+                            # 将设备添加到所有正在同步的文件夹
+                            self._add_device_to_active_folders(device_id)
                     
                     # 获取延迟（如果有）
                     latency_str = peer.get('latency', '0ms')
@@ -633,9 +637,10 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
                         device_id = self._get_remote_syncthing_id(ipv4)
                         
                         if device_id and device_id != my_syncthing_id:
-                            # 添加设备到Syncthing（如果已存在则不会重复添加）
-                            success = self.parent_window.syncthing_manager.add_device(device_id, hostname)
-                            if success:
+                            # 添加设备到Syncthing（如果已存在则返回None）
+                            result = self.parent_window.syncthing_manager.add_device(device_id, hostname)
+                            # 只有真正添加了新设备时才执行后续操作
+                            if result is True:
                                 logger.info(f"自动发现并添加设备: {hostname} ({device_id[:7]}...) - {ipv4}")
                                 
                                 # 将设备添加到所有正在同步的文件夹
