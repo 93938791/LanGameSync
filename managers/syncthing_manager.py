@@ -216,6 +216,7 @@ class SyncthingManager:
             listen_addresses = options.get('listenAddresses', [])
             
             # 默认监听地址：所有接口的 22000 端口
+            # 注意：在无TUN模式下，监听0.0.0.0可以被EasyTier接收
             default_address = "tcp://0.0.0.0:22000"
             
             # 检查是否已配置
@@ -362,21 +363,15 @@ class SyncthingManager:
                 device_exists = True
                 logger.debug(f"设备已存在: {device_id}")
                 
-                # 即使设备已存在，也要检查是否需要创建端口转发
-                if device_address and device_id not in self.device_forward_ports:
-                    # 设备存在但没有端口转发，需要创建
-                    local_port = self.next_forward_port
-                    self.next_forward_port += 1
+                # 即使设备已存在，也要检查是否需要更新地址（TUN模式下直接使用虚拟IP）
+                if device_address:
+                    tcp_address = f"tcp://{device_address}:22000"
+                    current_addresses = device.get("addresses", [])
                     
-                    # 启动端口转发：127.0.0.1:local_port → SOCKS5 → 虚拟IP:22000
-                    if self.socks5_forwarder.start_forward(local_port, device_address, 22000):
-                        # 记录设备ID和转发端口的映射
-                        self.device_forward_ports[device_id] = local_port
-                        
-                        # 更新设备地址为本地转发地址
-                        tcp_address = f"tcp://127.0.0.1:{local_port}"
+                    # 如果地址不匹配，需要更新
+                    if tcp_address not in current_addresses:
                         device["addresses"] = [tcp_address]
-                        logger.info(f"为已存在设备创建SOCKS5转发: {tcp_address} → {device_address}:22000")
+                        logger.info(f"更新设备地址（TUN模式）: {tcp_address}")
                         
                         # 保存配置
                         result = self.set_config(config, async_mode=False)
@@ -384,34 +379,20 @@ class SyncthingManager:
                             # 触发Syncthing重新连接该设备
                             self._restart_device_connection(device_id)
                         return result
-                    else:
-                        logger.warning(f"启动端口转发失败（设备已存在）")
                 
-                # 设备已存在且已有端口转发，无需操作
+                # 设备已存在且地址正确，无需操作
                 return None
         
         # 设备不存在，需要添加
         if not device_exists:
-            # 为远程设备创建端口转发（通过SOCKS5代理访问虚拟IP）
-            addresses = ["dynamic"]  # 默认使用dynamic
-            
+            # TUN模式下，直接使用虚拟IP地址，不需要SOCKS5转发
             if device_address:
-                # 分配一个本地转发端口
-                local_port = self.next_forward_port
-                self.next_forward_port += 1
-                
-                # 启动端口转发：127.0.0.1:local_port → SOCKS5 → 虚拟IP:22000
-                if self.socks5_forwarder.start_forward(local_port, device_address, 22000):
-                    # 记录设备ID和转发端口的映射
-                    self.device_forward_ports[device_id] = local_port
-                    
-                    # 使用本地转发地址
-                    tcp_address = f"tcp://127.0.0.1:{local_port}"
-                    addresses = [tcp_address]  # 只使用转发地址
-                    logger.info(f"使用SOCKS5转发: {tcp_address} → {device_address}:22000")
-                else:
-                    logger.warning(f"启动端口转发失败，使用dynamic发现")
+                tcp_address = f"tcp://{device_address}:22000"
+                addresses = [tcp_address]
+                logger.info(f"使用虚拟IP地址（TUN模式）: {tcp_address}")
             else:
+                # 如果没有提供虚拟IP，使用dynamic
+                addresses = ["dynamic"]
                 logger.warning("未提供虚拟IP地址，使用dynamic发现")
             
             # 添加新设备
