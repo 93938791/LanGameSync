@@ -41,6 +41,8 @@ env/
 logs/
 config.json
 easytier-panic.log
+app_*.log
+*.log
 
 # OS
 .DS_Store
