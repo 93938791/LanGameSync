@@ -36,6 +36,37 @@ class EasytierManager:
         if not Config.EASYTIER_BIN.exists():
             raise FileNotFoundError(f"Easytier程序不存在: {Config.EASYTIER_BIN}")
         
+        # 启动前先清理可能残留的进程
+        logger.info("清理可能残留的 easytier 进程...")
+        self.stop()  # 这会清理所有 easytier-core.exe 进程
+        
+        # 清理可能占用端口的进程（端口 11010 是 easytier 默认监听端口）
+        # 注意：这只会清理 easytier 相关的进程，不会清理其他程序的进程
+        logger.info("检查端口占用情况...")
+        import psutil
+        ports_to_check = [11010, 11011, 11012, 15888]  # easytier 常用的端口
+        for port in ports_to_check:
+            try:
+                for conn in psutil.net_connections(kind='inet'):
+                    try:
+                        if conn.laddr and conn.laddr.port == port:
+                            proc = psutil.Process(conn.pid)
+                            proc_name = proc.name().lower()
+                            # 只清理 easytier 相关的进程
+                            if 'easytier' in proc_name:
+                                logger.info(f"发现占用端口 {port} 的 easytier 进程: {proc_name} (PID: {conn.pid})，正在清理...")
+                                proc.kill()
+                                proc.wait(timeout=3)
+                                logger.info(f"已清理占用端口 {port} 的进程")
+                    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                        continue
+                    except Exception as e:
+                        logger.debug(f"检查端口 {port} 时出错: {e}")
+            except Exception as e:
+                logger.debug(f"扫描端口 {port} 失败: {e}")
+        
+        time.sleep(1)  # 等待端口释放
+        
         # 使用传入的参数或默认配置
         net_name = network_name if network_name else Config.EASYTIER_NETWORK_NAME
         net_secret = network_secret if network_secret else Config.EASYTIER_NETWORK_SECRET
@@ -55,6 +86,7 @@ class EasytierManager:
         
         args = [
             "--rpc-portal", "127.0.0.1:15888",  # 显式指定 RPC 端口，供 easytier-cli 连接
+            "--no-listener",  # 不监听任何端口，只连接到对等节点（客户端模式，避免端口占用问题）
             "-d",
             "--network-name", net_name,
             "--network-secret", net_secret,
@@ -63,21 +95,31 @@ class EasytierManager:
         
         # 添加节点
         if isinstance(peers_to_use, str):
-            # 如果是单个字符串，按逗号分割
-            peers_list = [p.strip() for p in peers_to_use.split(',') if p.strip()]
+            # 如果是单个字符串，支持分号和逗号分割（先按分号分割，再按逗号分割）
+            peers_list = []
+            # 先按分号分割
+            for part in peers_to_use.split(';'):
+                # 再按逗号分割
+                peers_list.extend([p.strip() for p in part.split(',') if p.strip()])
         else:
             peers_list = list(peers_to_use) if peers_to_use else []
         
+        # 确保每个节点都是独立的参数（避免在PowerShell中被误解析）
         for peer in peers_list:
-            args.extend(["-p", peer])
+            if peer.strip():  # 跳过空字符串
+                args.extend(["-p", peer.strip()])
         
         if peers_list:
-            logger.info(f"启动Easytier虚拟网络（使用节点：{len(peers_list)}个，TUN设备：{tun_device_name}）...")
+            logger.info(f"启动Easytier虚拟网络（客户端模式，使用节点：{len(peers_list)}个，TUN设备：{tun_device_name}）...")
+            logger.debug(f"节点列表: {peers_list}")
         else:
-            logger.info(f"启动Easytier虚拟网络（不使用节点，局域网模式，TUN设备：{tun_device_name}）...")
+            logger.info(f"启动Easytier虚拟网络（客户端模式，不使用节点，局域网模式，TUN设备：{tun_device_name}）...")
+        
+        logger.debug(f"完整启动参数: {' '.join(args)}")
         
         # 启动进程（TUN模式需要管理员权限）
         logger.info("ℹ️ TUN模式需要管理员权限来创建虚拟网卡...")
+        logger.info("ℹ️ 使用客户端模式（--no-listener），不会监听端口，避免端口占用问题...")
         self.process = ProcessHelper.start_process(
             Config.EASYTIER_BIN,
             args=args,
@@ -85,10 +127,67 @@ class EasytierManager:
             require_admin=True  # TUN模式需要管理员权限
         )
         
+        # 检查进程是否成功启动
+        if self.process is None:
+            logger.error("无法启动 easytier-core.exe 进程，请检查是否已授予管理员权限")
+            return False
+        
+        # 验证进程是否在运行
+        if not ProcessHelper.is_process_running(self.process):
+            logger.error("easytier-core.exe 进程启动后立即退出")
+            logger.error("可能的原因：")
+            logger.error("  1. 端口被占用（如 11010、11011、11012）- 请检查是否有其他程序占用这些端口")
+            logger.error("  2. 权限不足 - 请确保以管理员权限运行")
+            logger.error("  3. 缺少依赖文件（如 wintun.dll）- 请检查 resources 目录")
+            logger.error("  4. 配置错误 - 请检查网络名称和密码")
+            
+            # 检查端口占用情况
+            ports_to_check = [11010, 11011, 11012]
+            import psutil
+            for port in ports_to_check:
+                try:
+                    for conn in psutil.net_connections(kind='inet'):
+                        try:
+                            if conn.laddr and conn.laddr.port == port:
+                                proc = psutil.Process(conn.pid)
+                                proc_name = proc.name()
+                                logger.error(f"  端口 {port} 被进程占用: {proc_name} (PID: {conn.pid})")
+                        except:
+                            pass
+                except:
+                    pass
+            
+            self.process = None
+            return False
+        
+        logger.info(f"easytier-core.exe 进程已启动 (PID: {self.process.pid})")
+        
+        # 等待RPC服务就绪（端口15888）
+        logger.info("等待 RPC 服务就绪...")
+        rpc_port = 15888
+        rpc_ready = ProcessHelper.wait_for_port(rpc_port, timeout=15)
+        
+        if not rpc_ready:
+            logger.error(f"RPC 服务启动失败，无法连接到端口 {rpc_port}")
+            # 检查进程是否仍在运行
+            if ProcessHelper.is_process_running(self.process):
+                logger.warning("进程仍在运行，但 RPC 服务未就绪，可能是配置问题")
+            else:
+                logger.error("进程已退出，请检查错误信息")
+            self.stop()
+            return False
+        
+        logger.info("RPC 服务已就绪，等待虚拟IP分配...")
+        
         # 等待虚拟网络初始化并分配IP
-        logger.info("等待虚拟IP分配...")
         max_retries = 10
         for i in range(max_retries):
+            # 每次检查前先验证进程是否还在运行
+            if not ProcessHelper.is_process_running(self.process):
+                logger.error(f"easytier-core.exe 进程意外退出（在第{i+1}次检查时）")
+                self.process = None
+                return False
+            
             time.sleep(2)
             self.virtual_ip = self._get_virtual_ip()
             if self.virtual_ip and self.virtual_ip not in ["waiting...", "unknown"]:
@@ -106,20 +205,6 @@ class EasytierManager:
         logger.info(f"Easytier启动成功，虚拟IP: {self.virtual_ip}")
         
         return True
-    
-    def start_with_peer(self, peer, network_name, network_secret):
-        """使用自定义节点启动
-        
-        Args:
-            peer: 节点地址
-            network_name: 网络名称
-            network_secret: 网络密码
-        """
-        return self.start(
-            custom_peers=[peer] if peer else None,
-            network_name=network_name,
-            network_secret=network_secret
-        )
     
     def stop(self):
         """停止Easytier服务"""
@@ -329,33 +414,6 @@ class EasytierManager:
         
         return peers
     
-    def get_peer_count(self):
-        """获取已连接的对等设备数量"""
-        return len(self.peer_ips)
-    
-    def wait_for_peers(self, min_count=1, timeout=30):
-        """
-        等待至少N台对等设备上线
-        
-        Args:
-            min_count: 最少设备数量
-            timeout: 超时时间（秒）
-        
-        Returns:
-            bool: 是否满足条件
-        """
-        start_time = time.time()
-        
-        while time.time() - start_time < timeout:
-            peers = self.discover_peers(timeout=3)
-            if len(peers) >= min_count:
-                logger.info(f"已发现足够的设备: {len(peers)}/{min_count}")
-                return True
-            time.sleep(2)
-        
-        logger.warning(f"等待设备超时，当前仅 {len(self.peer_ips)} 台")
-        return False
-    
     def get_traffic_stats(self):
         """
         获取流量统计信息（通过 easytier-cli connector 命令）
@@ -413,14 +471,22 @@ class EasytierManager:
             
             # 计算速度
             current_time = time.time()
-            time_delta = current_time - self.last_update_time if self.last_update_time > 0 else 1
             
             tx_speed = 0
             rx_speed = 0
             
             if self.last_update_time > 0:
-                tx_speed = (stats['tx_bytes'] - self.last_tx_bytes) / time_delta
-                rx_speed = (stats['rx_bytes'] - self.last_rx_bytes) / time_delta
+                time_delta = current_time - self.last_update_time
+                if time_delta > 0:
+                    tx_speed = (stats['tx_bytes'] - self.last_tx_bytes) / time_delta
+                    rx_speed = (stats['rx_bytes'] - self.last_rx_bytes) / time_delta
+                else:
+                    # 时间差为0，使用上次的速度
+                    tx_speed = 0
+                    rx_speed = 0
+            else:
+                # 第一次调用，初始化数据
+                logger.debug(f"首次获取流量统计: tx_bytes={stats['tx_bytes']}, rx_bytes={stats['rx_bytes']}")
             
             # 更新历史数据
             self.last_tx_bytes = stats['tx_bytes']
@@ -429,6 +495,8 @@ class EasytierManager:
             
             stats['tx_speed'] = max(0, tx_speed)  # 确保速度非负
             stats['rx_speed'] = max(0, rx_speed)
+            
+            logger.debug(f"流量统计: tx_bytes={stats['tx_bytes']}, rx_bytes={stats['rx_bytes']}, tx_speed={stats['tx_speed']:.2f} B/s, rx_speed={stats['rx_speed']:.2f} B/s")
             
             return stats
             

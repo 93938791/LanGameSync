@@ -38,8 +38,12 @@ class ConnectThread(QThread):
                     self.connected.emit(False, "节点地址为空，请配置有效节点")
                     return
                 
-                # 将节点字符串转换为列表（支持逗号分隔的多个节点）
-                peers_list = [p.strip() for p in peers_str.split(',') if p.strip()]
+                # 将节点字符串转换为列表（支持分号和逗号分隔的多个节点）
+                peers_list = []
+                # 先按分号分割
+                for part in peers_str.split(';'):
+                    # 再按逗号分割
+                    peers_list.extend([p.strip() for p in part.split(',') if p.strip()])
                 if not peers_list:
                     self.connected.emit(False, "节点地址无效，请检查配置")
                     return

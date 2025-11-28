@@ -73,12 +73,13 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
         logger.info(f"✅ NetworkInterface 初始化完成")
     
     def showEvent(self, event):
-        """页面显示事件：切回页面时刷新设备列表"""
+        """页面显示事件：切回页面时刷新设备列表（异步，避免卡顿）"""
         super().showEvent(event)
-        # 如果已连接，刷新设备列表
+        # 如果已连接，延迟刷新设备列表（避免切换菜单时卡顿）
         if hasattr(self.parent_window, 'is_connected') and self.parent_window.is_connected:
-            logger.info("切回联机设置页面，刷新设备列表...")
-            self.update_clients_list()
+            logger.info("切回联机设置页面，延迟刷新设备列表...")
+            # 使用 QTimer 延迟刷新，避免阻塞UI
+            QTimer.singleShot(500, self.update_clients_list)
     
     def create_content(self, main_layout):
         """创建内容 - 流式布局"""
@@ -801,9 +802,14 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
                     
                     # 过滤掉本机（通过IP和hostname双重检查）
                     if ipv4 and ipv4 not in seen_ips and hostname != Config.HOSTNAME:
-                        # 尝试获取远程设备的Syncthing ID
+                        # 尝试获取远程设备的Syncthing ID（带超时检查）
                         device_id = self._get_remote_syncthing_id(ipv4)
-                        if device_id and device_id != self.parent_window.syncthing_manager.device_id:
+                        # 如果无法获取设备ID（设备已关闭或Syncthing未运行），跳过该设备
+                        if not device_id:
+                            logger.debug(f"跳过设备 {hostname} ({ipv4})：无法连接 Syncthing API（可能已关闭）")
+                            continue
+                        
+                        if device_id != self.parent_window.syncthing_manager.device_id:
                             # 添加设备到Syncthing（如果已存在则返回None）
                             result = self.parent_window.syncthing_manager.add_device(
                                 device_id=device_id,
@@ -822,6 +828,7 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
                                     self.last_reconnect_log_time[device_id] = current_time
                                 self.parent_window.syncthing_manager._restart_device_connection(device_id)
                         
+                        # 只有成功获取设备ID的设备才添加到列表
                         # 获取延迟
                         latency_str = peer.get('latency', '0ms')
                         latency = 0
@@ -866,8 +873,8 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
             
             url = f"http://{peer_ip}:{Config.SYNCTHING_API_PORT}/rest/system/status"
             headers = {"X-API-Key": Config.SYNCTHING_API_KEY}
-            
-            resp = requests.get(url, headers=headers, timeout=5)
+            # 设置较短的超时时间，避免长时间阻塞（设备已关闭时快速失败）
+            resp = requests.get(url, headers=headers, timeout=2)
             resp.raise_for_status()
             
             device_id = resp.json()["myID"]
@@ -933,10 +940,14 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
                         if not ipv4 or ipv4 == my_ip or hostname == Config.HOSTNAME:
                             continue
                         
-                        # 尝试获取远程设备的Syncthing ID
+                        # 尝试获取远程设备的Syncthing ID（带超时检查）
                         device_id = self._get_remote_syncthing_id(ipv4)
+                        # 如果无法获取设备ID（设备已关闭或Syncthing未运行），跳过该设备
+                        if not device_id:
+                            logger.debug(f"跳过设备 {hostname} ({ipv4})：无法连接 Syncthing API（可能已关闭）")
+                            continue
                         
-                        if device_id and device_id != my_syncthing_id:
+                        if device_id != my_syncthing_id:
                             online_device_ids.add(device_id)
                             
                             # 添加设备到Syncthing（如果已存在则返回None）
@@ -1021,24 +1032,40 @@ class NetworkInterface(QWidget):  # 改为 QWidget，不使用 ScrollArea
         if not self.parent_window.is_connected:
             return
         
-        # 检查 controller 和 easytier 是否存在
-        if not hasattr(self.parent_window, 'controller') or not self.parent_window.controller:
-            return
-        
-        if not hasattr(self.parent_window.controller, 'easytier') or not self.parent_window.controller.easytier:
-            return
-        
         try:
-            # 获取流量统计
-            stats = self.parent_window.controller.easytier.get_traffic_stats()
+            # 获取EasyTier流量统计
+            easytier_tx_speed = 0
+            easytier_rx_speed = 0
+            
+            if (hasattr(self.parent_window, 'controller') and 
+                self.parent_window.controller and 
+                hasattr(self.parent_window.controller, 'easytier') and 
+                self.parent_window.controller.easytier):
+                easytier_stats = self.parent_window.controller.easytier.get_traffic_stats()
+                easytier_tx_speed = easytier_stats.get('tx_speed', 0)
+                easytier_rx_speed = easytier_stats.get('rx_speed', 0)
+            
+            # 获取Syncthing流量统计
+            syncthing_tx_speed = 0
+            syncthing_rx_speed = 0
+            
+            if (hasattr(self.parent_window, 'syncthing_manager') and 
+                self.parent_window.syncthing_manager):
+                syncthing_stats = self.parent_window.syncthing_manager.get_traffic_stats()
+                if syncthing_stats:
+                    syncthing_tx_speed = syncthing_stats.get('tx_speed', 0)
+                    syncthing_rx_speed = syncthing_stats.get('rx_speed', 0)
+            
+            # 合并流量（EasyTier + Syncthing）
+            # 注意：由于Syncthing通过EasyTier虚拟网络通信，可能会有重复计算
+            # 但为了准确显示，我们优先使用Syncthing的统计（更准确）
+            # 如果Syncthing没有统计，则使用EasyTier的统计
+            total_tx_speed = syncthing_tx_speed if syncthing_tx_speed > 0 else easytier_tx_speed
+            total_rx_speed = syncthing_rx_speed if syncthing_rx_speed > 0 else easytier_rx_speed
             
             # 格式化流量显示（显示实时速度）
-            tx_speed = stats.get('tx_speed', 0)
-            rx_speed = stats.get('rx_speed', 0)
-            
-            # 转换为合适的单位
-            self.upload_value.setText(self._format_speed(tx_speed))
-            self.download_value.setText(self._format_speed(rx_speed))
+            self.upload_value.setText(self._format_speed(total_tx_speed))
+            self.download_value.setText(self._format_speed(total_rx_speed))
             
         except Exception as e:
             logger.error(f"更新流量统计失败: {e}")

@@ -65,10 +65,18 @@ class FluentMainWindow(MSFluentWindow):
         # 禁用最大化按钮
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowMaximizeButtonHint)
         
-        # 设置窗口图标（logo）
-        icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'resource', 'logo.ico')
+        # 设置窗口图标（logo）- 用于任务栏显示
+        icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'resources', 'logo.ico')
+        if not os.path.exists(icon_path):
+            # 尝试png格式
+            icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'resources', 'logo.png')
+        
         if os.path.exists(icon_path):
-            self.setWindowIcon(QIcon(icon_path))
+            icon = QIcon(icon_path)
+            self.setWindowIcon(icon)
+            # 同时设置应用图标（确保任务栏显示）
+            QApplication.setWindowIcon(icon)
+            logger.info(f"已设置窗口图标: {icon_path}")
         else:
             logger.warning(f"Logo文件不存在: {icon_path}")
         
@@ -133,8 +141,8 @@ class FluentMainWindow(MSFluentWindow):
         from PyQt5.QtCore import QTimer
         QTimer.singleShot(100, self._hide_navigation_buttons)
         
-        # 启动时自动暂停所有同步文件夹
-        self._pause_all_folders_on_startup()
+        # 启动时清理不在游戏管理中的文件夹
+        self._cleanup_orphaned_folders()
     
     def _hide_navigation_buttons(self):
         """隐藏导航栏按钮"""
@@ -224,30 +232,77 @@ Syncthing事件回调(收到同步事件时自动调用)
         except Exception as e:
             logger.error(f"TCP消息处理失败: {e}")
     
-    def _pause_all_folders_on_startup(self):
-        """程序启动时，将所有游戏的同步状态设置为停止"""
+    def _cleanup_orphaned_folders(self):
+        """程序启动时，清理不在游戏管理中的Syncthing文件夹"""
         try:
             from utils.config_cache import ConfigCache
             
+            # 等待Syncthing启动完成
+            from PyQt5.QtCore import QTimer
+            QTimer.singleShot(3000, self._do_cleanup_orphaned_folders)
+        except Exception as e:
+            logger.error(f"清理孤立文件夹失败: {e}")
+    
+    def _do_cleanup_orphaned_folders(self):
+        """执行清理孤立文件夹的操作"""
+        try:
+            from utils.config_cache import ConfigCache
+            
+            # 检查是否有syncthing_manager
+            if not hasattr(self, 'controller') or not self.controller:
+                return
+            
+            syncthing_manager = self.controller.syncthing
+            if not syncthing_manager or not syncthing_manager.device_id:
+                logger.warning("Syncthing未启动，跳过清理孤立文件夹")
+                return
+            
+            # 获取游戏管理中的文件夹ID
             config_data = ConfigCache.load()
             game_list = config_data.get("game_list", [])
-            
-            # 将所有游戏的is_syncing设置为False
+            game_folder_ids = set()
             for game in game_list:
-                game['is_syncing'] = False
+                folder_id = game.get('sync_folder_id')
+                if folder_id:
+                    game_folder_ids.add(folder_id)
             
-            ConfigCache.save(config_data)
-            logger.info(f"已将 {len(game_list)} 个游戏的同步状态重置为停止")
+            # 获取Syncthing配置中的所有文件夹
+            full_config = syncthing_manager.get_config(filter_self=False)
+            if not full_config:
+                return
+            
+            folders = full_config.get('folders', [])
+            orphaned_folders = []
+            
+            for folder in folders:
+                folder_id = folder.get('id')
+                # 如果文件夹不在游戏管理中，则标记为孤立文件夹
+                if folder_id not in game_folder_ids:
+                    orphaned_folders.append(folder_id)
+            
+            # 删除孤立文件夹
+            if orphaned_folders:
+                logger.info(f"发现 {len(orphaned_folders)} 个孤立文件夹，开始清理: {orphaned_folders}")
+                for folder_id in orphaned_folders:
+                    try:
+                        success = syncthing_manager.remove_folder(folder_id)
+                        if success:
+                            logger.info(f"已删除孤立文件夹: {folder_id}")
+                        else:
+                            logger.warning(f"删除孤立文件夹失败: {folder_id}")
+                    except Exception as e:
+                        logger.error(f"删除孤立文件夹 {folder_id} 时出错: {e}")
+            else:
+                logger.info("未发现孤立文件夹")
         except Exception as e:
-            logger.error(f"重置同步状态失败: {e}")
+            logger.error(f"清理孤立文件夹失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
     
     def closeEvent(self, event):
-        """窗口关闭事件 - 异步清理资源，不阻塞主程序"""
+        """窗口关闭事件 - 同步清理资源，确保进程被终止"""
         try:
             logger.info("正在关闭程序...")
-            
-            # 立即接受关闭事件，关闭窗口界面
-            event.accept()
             
             # 重置连接状态（立即生效）
             self.is_connected = False
@@ -263,49 +318,77 @@ Syncthing事件回调(收到同步事件时自动调用)
                 if hasattr(self.sync_interface, 'auto_refresh_timer') and self.sync_interface.auto_refresh_timer.isActive():
                     self.sync_interface.auto_refresh_timer.stop()
             
-            # 在独立线程中执行清理操作（不阻塞主程序）
-            import threading
+            # 同步清理资源（确保进程被终止）
+            logger.info("开始清理资源...")
             
-            def cleanup_resources():
-                """异步清理资源（在独立线程中执行）"""
+            # 1. 断开TCP广播
+            if hasattr(self, 'tcp_broadcast') and self.tcp_broadcast:
                 try:
-                    logger.info("开始异步清理资源...")
-                    
-                    # 1. 断开TCP广播
-                    if hasattr(self, 'tcp_broadcast') and self.tcp_broadcast:
-                        try:
-                            logger.info("正在关闭TCP广播...")
-                            self.tcp_broadcast.disconnect()
-                            self.tcp_broadcast = None
-                            logger.info("TCP广播已关闭")
-                        except Exception as e:
-                            logger.error(f"关闭TCP广播失败: {e}")
-                    
-                    # 2. 停止Syncthing（最耗时的操作）
-                    if hasattr(self, 'syncthing_manager') and self.syncthing_manager:
-                        try:
-                            logger.info("正在停止Syncthing...")
-                            self.syncthing_manager.stop()
-                            self.syncthing_manager = None
-                            logger.info("Syncthing已停止")
-                        except Exception as e:
-                            logger.error(f"停止Syncthing失败: {e}")
-                    
-                    # 3. 断开EasyTier网络（确保完全清理）
-                    if hasattr(self, 'controller') and self.controller:
-                        if hasattr(self.controller, 'easytier') and self.controller.easytier:
-                            try:
-                                logger.info("正在断开EasyTier网络...")
-                                self.controller.easytier.stop()
-                                logger.info("EasyTier网络已断开")
-                                
-                                # 再次确认清理（防止残留）
-                                import psutil
-                                import time
-                                time.sleep(1)  # 等待1秒
-                                
-                                remaining_count = 0
-                                for proc in psutil.process_iter(['pid', 'name']):
+                    logger.info("正在关闭TCP广播...")
+                    self.tcp_broadcast.disconnect()
+                    self.tcp_broadcast = None
+                    logger.info("TCP广播已关闭")
+                except Exception as e:
+                    logger.error(f"关闭TCP广播失败: {e}")
+            
+            # 2. 停止Syncthing（最耗时的操作）
+            if hasattr(self, 'syncthing_manager') and self.syncthing_manager:
+                try:
+                    logger.info("正在停止Syncthing...")
+                    self.syncthing_manager.stop()
+                    self.syncthing_manager = None
+                    logger.info("Syncthing已停止")
+                except Exception as e:
+                    logger.error(f"停止Syncthing失败: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+            
+            # 再次确认清理所有Syncthing残留进程
+            try:
+                import psutil
+                import time
+                time.sleep(0.5)  # 等待一下
+                
+                syncthing_names = ['syncthing.exe', 'syncthing']
+                remaining_count = 0
+                for proc in psutil.process_iter(['pid', 'name']):
+                    try:
+                        proc_name = proc.info.get('name', '').lower()
+                        for name in syncthing_names:
+                            if name.lower() in proc_name:
+                                remaining_count += 1
+                                logger.warning(f"发现残留Syncthing进程: {proc_name} (PID: {proc.info['pid']})，强制清理...")
+                                try:
+                                    proc.kill()
+                                    proc.wait(timeout=1)
+                                except:
+                                    pass
+                                break
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+                    except Exception:
+                        pass
+                
+                if remaining_count > 0:
+                    logger.info(f"✅ 清理了 {remaining_count} 个残留的Syncthing进程")
+            except Exception as e:
+                logger.error(f"清理残留Syncthing进程失败: {e}")
+            
+            # 3. 断开EasyTier网络（确保完全清理）
+            if hasattr(self, 'controller') and self.controller:
+                if hasattr(self.controller, 'easytier') and self.controller.easytier:
+                    try:
+                        logger.info("正在断开EasyTier网络...")
+                        self.controller.easytier.stop()
+                        logger.info("EasyTier网络已断开")
+                        
+                        # 再次确认清理（防止残留）
+                        import psutil
+                        import time
+                        time.sleep(1)  # 等待1秒
+                        
+                        remaining_count = 0
+                        for proc in psutil.process_iter(['pid', 'name']):
                                     try:
                                         if proc.info['name'] and 'easytier-core' in proc.info['name'].lower():
                                             remaining_count += 1
@@ -319,20 +402,33 @@ Syncthing事件回调(收到同步事件时自动调用)
                                     logger.info(f"清理了 {remaining_count} 个残留的EasyTier进程")
                             except Exception as e:
                                 logger.error(f"断开EasyTier失败: {e}")
-                    
-                    logger.info("✅ 异步清理资源完成")
-                    
-                except Exception as e:
-                    logger.error(f"异步清理资源失败: {e}")
             
-            # 启动清理线程（daemon=True 确保主程序退出时自动结束）
-            cleanup_thread = threading.Thread(target=cleanup_resources, daemon=True, name="CleanupThread")
-            cleanup_thread.start()
+            logger.info("✅ 资源清理完成")
             
-            logger.info("✅ 窗口已关闭，资源清理在后台进行中...")
+            # 最后接受关闭事件，关闭窗口
+            event.accept()
             
         except Exception as e:
             logger.error(f"关闭程序时出错: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            
+            # 即使出错也要强制清理进程
+            try:
+                import psutil
+                # 强制清理所有相关进程
+                for proc in psutil.process_iter(['pid', 'name']):
+                    try:
+                        proc_name = proc.info.get('name', '').lower()
+                        if 'syncthing' in proc_name or 'easytier-core' in proc_name:
+                            logger.warning(f"强制清理残留进程: {proc_name} (PID: {proc.info['pid']})")
+                            proc.kill()
+                            proc.wait(timeout=1)
+                    except:
+                        pass
+            except:
+                pass
+            
             # 确保窗口能关闭
             event.accept()
 

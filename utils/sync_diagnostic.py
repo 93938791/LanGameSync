@@ -129,32 +129,3 @@ class SyncDiagnostic:
         
         return results
     
-    @staticmethod
-    def get_recommendations(results):
-        """根据诊断结果生成建议"""
-        recommendations = []
-        
-        if not results.get('syncthing_api'):
-            recommendations.append("⚠️ Syncthing API 不可访问，请检查 Syncthing 是否正常启动")
-        
-        if not results.get('syncthing_port'):
-            recommendations.append("⚠️ Syncthing 同步端口 22000 不可访问，可能被防火墙阻止")
-        
-        if not results.get('virtual_ip'):
-            recommendations.append("⚠️ 虚拟 IP 未分配，请等待 EasyTier 完成组网")
-        
-        if results.get('connected_devices') == 0:
-            recommendations.append("⚠️ 没有已连接的设备，请确保其他设备已加入相同网络")
-        
-        if not results.get('folder_writable'):
-            msg = results.get('folder_writable_msg', '')
-            recommendations.append(f"⚠️ 文件夹不可写: {msg}")
-        
-        if not results.get('disk_space'):
-            msg = results.get('disk_space_msg', '')
-            recommendations.append(f"⚠️ 磁盘空间问题: {msg}")
-        
-        if not recommendations:
-            recommendations.append("✅ 所有检查通过，同步环境正常")
-        
-        return recommendations

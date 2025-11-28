@@ -31,9 +31,6 @@ class SyncthingManager:
         if not Config.SYNCTHING_BIN.exists():
             raise FileNotFoundError(f"Syncthing程序不存在: {Config.SYNCTHING_BIN}")
         
-        # 在启动之前，直接修改配置文件，将所有文件夹设为暂停状态
-        self._pause_folders_in_config_file()
-        
         # 先杀死占用端口的进程
         ProcessHelper.kill_by_port(Config.SYNCTHING_API_PORT)
         
@@ -86,32 +83,97 @@ class SyncthingManager:
         return True
     
     def stop(self):
-        """停止Syncthing服务（异步操作，不阻塞）"""
+        """停止Syncthing服务（彻底清理所有进程）"""
         # 停止事件监听
         self.stop_event_listener()
         
-        # 先尝试通过API优雅地关闭Syncthing（不等待）
+        # 先尝试通过API优雅地关闭Syncthing
         try:
             logger.info("尝试通过API关闭Syncthing...")
             resp = requests.post(
                 f"{self.api_url}/rest/system/shutdown",
                 headers=self.headers,
-                timeout=2  # 缩短超时时间
+                timeout=2
             )
             if resp.status_code == 200:
                 logger.info("✅ Syncthing API关闭请求已发送")
+                time.sleep(1)  # 等待优雅关闭
         except Exception as e:
             logger.warning(f"API关闭失败，将强制结束进程: {e}")
         
-        # 强制结束进程（立即执行，不等待）
+        # 强制结束当前进程
         if self.process:
-            ProcessHelper.kill_process(self.process)
+            try:
+                ProcessHelper.kill_process(self.process, timeout=3)
+            except Exception as e:
+                logger.warning(f"结束进程失败: {e}")
             self.process = None
         
-        # 杀死所有占用端口的进程（确保彻底清理）
+        # 杀死所有占用端口的进程
         ProcessHelper.kill_by_port(Config.SYNCTHING_API_PORT)
         
-        logger.info("✅ Syncthing已停止")
+        # 彻底清理所有Syncthing相关进程
+        self._kill_all_syncthing_processes()
+        
+        logger.info("✅ Syncthing已彻底停止")
+    
+    def _kill_all_syncthing_processes(self):
+        """彻底清理所有Syncthing相关进程"""
+        try:
+            import psutil
+            syncthing_names = ['syncthing.exe', 'syncthing']
+            killed_count = 0
+            
+            for proc in psutil.process_iter(['pid', 'name', 'exe']):
+                try:
+                    proc_name = proc.info.get('name', '').lower()
+                    proc_exe = proc.info.get('exe', '')
+                    
+                    # 检查进程名
+                    is_syncthing = False
+                    for name in syncthing_names:
+                        if name.lower() in proc_name:
+                            is_syncthing = True
+                            break
+                    
+                    # 检查可执行文件路径
+                    if not is_syncthing and proc_exe:
+                        exe_name = os.path.basename(proc_exe).lower()
+                        for name in syncthing_names:
+                            if name.lower() in exe_name:
+                                is_syncthing = True
+                                break
+                    
+                    if is_syncthing:
+                        logger.info(f"发现Syncthing进程: {proc_name} (PID: {proc.info['pid']})，正在清理...")
+                        try:
+                            proc.terminate()
+                            proc.wait(timeout=2)
+                            killed_count += 1
+                            logger.info(f"✅ 已清理进程 PID: {proc.info['pid']}")
+                        except psutil.TimeoutExpired:
+                            logger.warning(f"进程 {proc.info['pid']} 未响应，强制杀死...")
+                            proc.kill()
+                            proc.wait(timeout=1)
+                            killed_count += 1
+                        except psutil.NoSuchProcess:
+                            pass
+                        except Exception as e:
+                            logger.warning(f"清理进程 {proc.info['pid']} 失败: {e}")
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    continue
+                except Exception as e:
+                    logger.debug(f"检查进程失败: {e}")
+            
+            if killed_count > 0:
+                logger.info(f"✅ 共清理了 {killed_count} 个Syncthing进程")
+            else:
+                logger.debug("未发现残留的Syncthing进程")
+                
+        except Exception as e:
+            logger.error(f"清理Syncthing进程失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
     
     def get_device_id(self):
         """获取本机设备ID"""
@@ -194,53 +256,6 @@ class SyncthingManager:
             logger.error(f"启用自动接受失败: {e}")
             return False
     
-    def _pause_folders_in_config_file(self):
-        """在Syncthing启动前，直接修改config.xml文件，将所有文件夹设为paused=true"""
-        try:
-            config_file = Path(Config.SYNCTHING_HOME) / "config.xml"
-            
-            # 如果配置文件不存在，跳过（首次运行）
-            if not config_file.exists():
-                logger.info("配置文件不存在，跳过暂停文件夹（首次运行）")
-                return True
-            
-            # 读取XML配置文件
-            tree = ET.parse(config_file)
-            root = tree.getroot()
-            
-            # 查找所有folder元素
-            paused_count = 0
-            for folder in root.findall('.//folder'):
-                paused_elem = folder.find('paused')
-                
-                if paused_elem is None:
-                    # 如果没有paused元素，添加一个
-                    paused_elem = ET.SubElement(folder, 'paused')
-                    paused_elem.text = 'true'
-                    paused_count += 1
-                elif paused_elem.text != 'true':
-                    # 如果是false，改为true
-                    paused_elem.text = 'true'
-                    paused_count += 1
-            
-            if paused_count > 0:
-                # 保存修改后的配置文件
-                tree.write(config_file, encoding='utf-8', xml_declaration=True)
-                logger.info(f"✅ 在启动前已将 {paused_count} 个文件夹设为暂停状态（配置文件层面）")
-                logger.info("🔒 确保启动时不会自动同步任何文件")
-            else:
-                logger.info("✅ 配置文件中的所有文件夹已是暂停状态")
-            
-            return True
-        except FileNotFoundError:
-            # 配置文件不存在，首次运行
-            logger.info("配置文件不存在，跳过暂停文件夹")
-            return True
-        except Exception as e:
-            logger.warning(f"修改配置文件失败: {e}，将在启动后通过API暂停")
-            return False
-    
-
     def _configure_listen_address(self):
         """配置监听地址，确保监听所有网络接口（Syncthing v2.0+）"""
         try:
@@ -316,59 +331,6 @@ class SyncthingManager:
         except Exception as e:
             logger.error(f"触发设备重连失败: {e}")
             return False
-    
-    def restart_all_devices(self):
-        """触发所有设备重新连接（用于设备重新上线后重连）"""
-        try:
-            config = self.get_config()
-            if not config:
-                return False
-            
-            devices = config.get('devices', [])
-            if not devices:
-                logger.info("没有需要重连的设备")
-                return True
-            
-            logger.info(f"触发 {len(devices)} 个设备重新连接...")
-            
-            # 先暂停所有设备
-            for device in devices:
-                device['paused'] = True
-            self.set_config(config, async_mode=False)
-            
-            # 等待1秒
-            import time
-            time.sleep(1)
-            
-            # 再恢复所有设备
-            for device in devices:
-                device['paused'] = False
-            self.set_config(config, async_mode=False)
-            
-            logger.info("✅ 已触发所有设备重连")
-            return True
-        except Exception as e:
-            logger.error(f"触发设备重连失败: {e}")
-            return False
-    
-    def api_request(self, endpoint, method="GET", data=None):
-        """通用API请求方法"""
-        try:
-            url = f"{self.api_url}{endpoint}"
-            if method == "GET":
-                resp = requests.get(url, headers=self.headers, timeout=5)
-            elif method == "POST":
-                resp = requests.post(url, headers=self.headers, json=data, timeout=5)
-            elif method == "PUT":
-                resp = requests.put(url, headers=self.headers, json=data, timeout=5)
-            else:
-                return None
-            
-            resp.raise_for_status()
-            return resp.json()
-        except Exception as e:
-            logger.debug(f"API请求失败 {endpoint}: {e}")
-            return None
     
     def get_config(self, filter_self=True):
         """获取完整配置
@@ -544,56 +506,6 @@ class SyncthingManager:
             
             return self.set_config(config, async_mode=async_mode)
     
-    def set_device_name(self, device_id, name):
-        """
-        设置设备名称/昵称
-        
-        Args:
-            device_id: 设备ID
-            name: 设备名称/昵称
-        """
-        try:
-            config = self.get_config()
-            if not config:
-                return False
-            
-            # 查找并更新设备名称
-            for device in config.get('devices', []):
-                if device['deviceID'] == device_id:
-                    device['name'] = name
-                    logger.info(f"已设置设备 {device_id[:7]}... 的名称为: {name}")
-                    return self.set_config(config, async_mode=True)
-            
-            logger.warning(f"未找到设备: {device_id}")
-            return False
-        except Exception as e:
-            logger.error(f"设置设备名称失败: {e}")
-            return False
-    
-    def get_device_name(self, device_id):
-        """
-        获取设备名称/昵称
-        
-        Args:
-            device_id: 设备ID
-            
-        Returns:
-            str: 设备名称，如果未设置则返回空字符串
-        """
-        try:
-            config = self.get_config()
-            if not config:
-                return ''
-            
-            for device in config.get('devices', []):
-                if device['deviceID'] == device_id:
-                    return device.get('name', '')
-            
-            return ''
-        except Exception as e:
-            logger.error(f"获取设备名称失败: {e}")
-            return ''
-    
     def add_folder(self, folder_path, folder_id=None, folder_label=None, devices=None, watcher_delay=10, paused=True, async_mode=True):
         """
         添加同步文件夹
@@ -679,57 +591,6 @@ class SyncthingManager:
         config["folders"].append(new_folder)
         
         return self.set_config(config, async_mode=async_mode)
-    
-    def setup_sync_folder(self, folder_id, folder_path, folder_label, watcher_delay=10):
-        """
-        配置同步文件夹(包含所有已连接设备)
-        
-        Args:
-            folder_id: 文件夹ID
-            folder_path: 本地文件夹路径
-            folder_label: 文件夹标签
-            watcher_delay: 文件监控延迟(秒)
-            
-        Returns:
-            bool: 是否成功
-        """
-        try:
-            # 获取所有已知设备(从配置中)
-            config = self.get_config()
-            if not config:
-                logger.error("无法获取Syncthing配置")
-                return False
-            
-            # 获取所有设备ID(除了本机)
-            device_ids = []
-            for device in config.get('devices', []):
-                dev_id = device.get('deviceID')
-                if dev_id and dev_id != self.device_id:
-                    device_ids.append(dev_id)
-            
-            logger.info(f"找到 {len(device_ids)} 个远程设备,准备添加到同步文件夹")
-            
-            # 添加文件夹(带延迟参数，默认暂停)
-            result = self.add_folder(
-                folder_path=folder_path,
-                folder_id=folder_id,
-                folder_label=folder_label,
-                devices=device_ids,
-                watcher_delay=watcher_delay,
-                paused=True  # 默认暂停，需要手动启动
-            )
-            
-            if result:
-                logger.info(f"同步文件夹配置成功: {folder_id}, 设备数: {len(device_ids)}, 延迟: {watcher_delay}秒")
-            else:
-                logger.error("同步文件夹配置失败")
-            
-            return result
-        except Exception as e:
-            logger.error(f"配置同步文件夹失败: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            return False
     
     def add_device_to_folder(self, folder_id, device_id):
         """
@@ -886,6 +747,56 @@ class SyncthingManager:
             logger.error(f"获取连接状态失败: {e}")
             return None
     
+    def get_traffic_stats(self):
+        """
+        获取Syncthing流量统计信息
+        
+        Returns:
+            dict: 流量统计信息
+                {
+                    'tx_speed': 上传速度(bytes/s),
+                    'rx_speed': 下载速度(bytes/s)
+                }
+        """
+        try:
+            # 获取连接信息，其中包含流量统计
+            resp = requests.get(f"{self.api_url}/rest/system/connections", headers=self.headers, timeout=5)
+            resp.raise_for_status()
+            connections = resp.json()
+            
+            if not connections or 'connections' not in connections:
+                return None
+            
+            # 计算总的上传和下载速度
+            total_tx_speed = 0
+            total_rx_speed = 0
+            
+            for device_id, conn_info in connections.get('connections', {}).items():
+                if conn_info.get('connected', False):
+                    # 从连接信息中获取流量速度
+                    # Syncthing API 的 connections 端点可能不直接提供速度信息
+                    # 我们需要从其他端点获取，或者使用连接信息中的其他字段
+                    pass
+            
+            # 尝试从 /rest/stats/device 获取设备统计信息
+            try:
+                stats_resp = requests.get(f"{self.api_url}/rest/stats/device", headers=self.headers, timeout=5)
+                if stats_resp.status_code == 200:
+                    stats_data = stats_resp.json()
+                    # 解析统计信息（需要根据实际API响应格式调整）
+                    # 这里先返回None，等待实际测试后完善
+                    pass
+            except:
+                pass
+            
+            # 由于Syncthing API可能不直接提供实时速度，我们返回None
+            # 让调用方使用EasyTier的统计
+            return None
+            
+        except Exception as e:
+            logger.debug(f"获取Syncthing流量统计失败: {e}")
+            return None
+    
     def get_folder_status(self, folder_id=None):
         """获取文件夹同步状态"""
         folder_id = folder_id or Config.SYNC_FOLDER_ID
@@ -953,12 +864,6 @@ class SyncthingManager:
             self.event_callbacks.append(callback)
             logger.info(f"注册事件回调: {callback.__name__}")
     
-    def unregister_event_callback(self, callback):
-        """取消注册事件回调函数"""
-        if callback in self.event_callbacks:
-            self.event_callbacks.remove(callback)
-            logger.info(f"取消注册事件回调: {callback.__name__}")
-    
     def start_event_listener(self):
         """启动事件监听线程"""
         if self.event_running:
@@ -1025,3 +930,144 @@ class SyncthingManager:
                     time.sleep(1)  # 错误后等待一秒再重试
         
         logger.info("事件监听循环退出")
+    
+    def get_remote_device_folders(self, device_ip, device_id=None):
+        """
+        获取远程设备的文件夹列表
+        
+        Args:
+            device_ip: 远程设备的虚拟IP地址
+            device_id: 远程设备的ID（可选，用于验证）
+            
+        Returns:
+            list: 远程设备的文件夹列表，失败返回None
+        """
+        try:
+            headers = {"X-API-Key": Config.SYNCTHING_API_KEY}
+            
+            # 首先从 system/status 获取设备ID和设备名（这是最可靠的方式）
+            remote_device_id = None
+            remote_device_name = 'Unknown'
+            
+            try:
+                status_url = f"http://{device_ip}:{Config.SYNCTHING_API_PORT}/rest/system/status"
+                logger.debug(f"正在访问远程设备状态API: {status_url}")
+                status_resp = requests.get(status_url, headers=headers, timeout=5)
+                status_resp.raise_for_status()
+                
+                if status_resp.status_code == 200:
+                    status_data = status_resp.json()
+                    remote_device_id = status_data.get('myID')
+                    if remote_device_id:
+                        logger.info(f"✅ 从 {device_ip} 的 system/status 获取到设备ID: {remote_device_id[:7]}...")
+                    else:
+                        logger.error(f"❌ 从 {device_ip} 的 system/status 未找到 myID，响应键: {list(status_data.keys())}")
+                else:
+                    logger.error(f"❌ 访问 {device_ip} 的 system/status 失败，状态码: {status_resp.status_code}")
+            except Exception as e:
+                logger.error(f"❌ 从 {device_ip} 的 system/status 获取设备ID失败: {e}")
+                import traceback
+                logger.error(f"详细错误: {traceback.format_exc()}")
+            
+            if not remote_device_id:
+                logger.error(f"❌ 无法从 {device_ip} 获取设备ID")
+                return None
+            
+            # 验证设备ID（如果提供了）
+            if device_id:
+                if remote_device_id != device_id:
+                    logger.warning(f"设备ID不匹配: 期望 {device_id[:7]}..., 实际 {remote_device_id[:7]}...")
+                    return None
+            
+            # 然后从 config 获取文件夹列表
+            config_url = f"http://{device_ip}:{Config.SYNCTHING_API_PORT}/rest/config"
+            logger.debug(f"正在访问远程设备配置API: {config_url}")
+            resp = requests.get(config_url, headers=headers, timeout=5)
+            resp.raise_for_status()
+            
+            # 检查响应状态
+            if resp.status_code != 200:
+                logger.error(f"从 {device_ip} 获取配置失败，HTTP状态码: {resp.status_code}")
+                return None
+            
+            remote_config = resp.json()
+            
+            # 检查配置是否有效
+            if not remote_config:
+                logger.error(f"从 {device_ip} 获取的配置为空")
+                return None
+            
+            # 尝试从 config 获取设备名（如果存在）
+            remote_device_name = remote_config.get('myName', 'Unknown')
+            # 如果 config 中没有设备名，使用设备ID的前7位作为显示名
+            if remote_device_name == 'Unknown':
+                remote_device_name = f"设备 {remote_device_id[:7]}..."
+            
+            # 获取文件夹列表（只返回未暂停的文件夹，即正在分享的）
+            folders = []
+            
+            # 确保 folders 是列表
+            folders_list = remote_config.get('folders', [])
+            if not isinstance(folders_list, list):
+                logger.error(f"从 {device_ip} 获取的 folders 不是列表类型: {type(folders_list)}")
+                return None
+            
+            for folder in folders_list:
+                # 确保 folder 是字典
+                if not isinstance(folder, dict):
+                    logger.warning(f"跳过无效的文件夹项（不是字典）: {type(folder)}")
+                    continue
+                
+                # 只返回未暂停的文件夹（正在分享的）
+                if not folder.get('paused', False):
+                    # 检查文件夹是否共享给本机
+                    # 注意：远程设备的配置中，文件夹的设备列表包含的是共享给哪些设备
+                    # 如果本机在列表中，说明这个文件夹是共享给本机的
+                    devices_list = folder.get('devices', [])
+                    if not isinstance(devices_list, list):
+                        devices_list = []
+                    
+                    folder_devices = []
+                    for d in devices_list:
+                        if isinstance(d, dict):
+                            device_id = d.get('deviceID')
+                            if device_id:
+                                folder_devices.append(device_id)
+                    
+                    # 检查本机是否在设备列表中
+                    shared_to_me = False
+                    if self.device_id:
+                        shared_to_me = self.device_id in folder_devices
+                    
+                    # 重要：返回所有未暂停的文件夹，不管是否已共享给本机
+                    # 因为用户可能想要同步，即使还没有被添加到设备列表
+                    # 当用户点击同步时，会自动将本机添加到远程设备的文件夹设备列表中
+                    folders.append({
+                        'id': folder.get('id'),
+                        'label': folder.get('label', folder.get('id')),
+                        'path': folder.get('path'),  # 远程设备的路径
+                        'device_id': remote_device_id,
+                        'device_ip': device_ip,
+                        'device_name': remote_device_name,
+                        'shared_to_me': shared_to_me  # 是否已共享给本机
+                    })
+                    logger.debug(f"发现远程设备 {remote_device_name} 的文件夹: {folder.get('id')}, 共享给本机: {shared_to_me}")
+            
+            if len(folders) > 0:
+                logger.info(f"从 {remote_device_name} ({device_ip}) 获取到 {len(folders)} 个文件夹: {[f.get('id') for f in folders]}")
+            return folders
+        except requests.exceptions.Timeout:
+            logger.warning(f"获取远程设备 {device_ip} 的文件夹列表超时")
+            return None
+        except requests.exceptions.HTTPError as e:
+            logger.warning(f"获取远程设备 {device_ip} 的文件夹列表HTTP错误: {e}, 状态码: {e.response.status_code if hasattr(e, 'response') else 'N/A'}")
+            return None
+        except requests.exceptions.ConnectionError as e:
+            logger.warning(f"无法连接到远程设备 {device_ip} 的Syncthing API: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"获取远程设备文件夹列表失败: {e}")
+            import traceback
+            logger.error(f"详细错误信息: {traceback.format_exc()}")
+            return None
+    

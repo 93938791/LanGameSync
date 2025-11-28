@@ -1,7 +1,7 @@
 """
 游戏管理页面
 """
-from PyQt5.QtCore import Qt, pyqtSlot
+from PyQt5.QtCore import Qt, pyqtSlot, QTimer
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem, QLabel, QTableWidgetItem
 from PyQt5.QtGui import QPixmap
 from qfluentwidgets import (
@@ -96,7 +96,7 @@ class GameInterface(QWidget):
         # 按钮区
         btn_layout = QHBoxLayout()
         
-        add_game_btn = PrimaryPushButton(FluentIcon.ADD, "添加游戏")
+        add_game_btn = PrimaryPushButton(FluentIcon.ADD, "添加游戏存档")
         add_game_btn.setFixedHeight(36)
         add_game_btn.clicked.connect(self.add_game)
         btn_layout.addWidget(add_game_btn)
@@ -171,33 +171,9 @@ class GameInterface(QWidget):
         card = CardWidget()
         card.setVisible(False)  # 默认隐藏
         
-        layout = QHBoxLayout(card)
+        layout = QVBoxLayout(card)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(16)
-        
-        # 游戏图标
-        icon_container = QWidget()
-        icon_container.setFixedSize(72, 72)
-        icon_container.setStyleSheet("""
-            QWidget {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #f0f9ff,
-                    stop:1 #e0f2fe);
-                border: 2px solid #0078d4;
-                border-radius: 12px;
-            }
-        """)
-        
-        icon_layout = QVBoxLayout(icon_container)
-        icon_layout.setContentsMargins(0, 0, 0, 0)
-        icon_layout.setAlignment(Qt.AlignCenter)
-        
-        self.game_icon_label = QLabel()
-        self.game_icon_label.setAlignment(Qt.AlignCenter)
-        self.game_icon_label.setStyleSheet("background: transparent; border: none;")
-        icon_layout.addWidget(self.game_icon_label)
-        
-        layout.addWidget(icon_container)
         
         # 游戏信息
         info_layout = QVBoxLayout()
@@ -243,17 +219,17 @@ class GameInterface(QWidget):
         # 标题
         header = QHBoxLayout()
         
-        saves_title = SubtitleLabel("存档列表")
+        saves_title = SubtitleLabel("文件列表")
         saves_title.setStyleSheet("font-weight: 600;")
         header.addWidget(saves_title)
         header.addStretch()
         
         layout.addLayout(header)
         
-        # 存档表格
+        # 文件列表表格
         self.saves_table = TableWidget()
         self.saves_table.setColumnCount(2)
-        self.saves_table.setHorizontalHeaderLabels(["存档名称", "更新时间"])
+        self.saves_table.setHorizontalHeaderLabels(["文件名", "修改时间"])
         self.saves_table.setFixedHeight(260)
         self.saves_table.verticalHeader().setVisible(False)
         
@@ -275,16 +251,16 @@ class GameInterface(QWidget):
         layout.setContentsMargins(20, 16, 20, 16)
         layout.setSpacing(12)
         
-        # 启动同步
-        self.sync_btn = PushButton(FluentIcon.SYNC, "启动同步")
+        # 加入分享
+        self.sync_btn = PushButton(FluentIcon.SYNC, "加入分享")
         self.sync_btn.setFixedHeight(40)
         self.sync_btn.clicked.connect(self.toggle_sync)
         layout.addWidget(self.sync_btn)
         
         layout.addStretch()
         
-        # 删除游戏
-        self.delete_game_btn = PushButton(FluentIcon.DELETE, "删除游戏")
+        # 停止分享
+        self.delete_game_btn = PushButton(FluentIcon.DELETE, "停止分享")
         self.delete_game_btn.setFixedHeight(40)
         self.delete_game_btn.clicked.connect(self.delete_game)
         self.delete_game_btn.setStyleSheet("""
@@ -321,10 +297,8 @@ class GameInterface(QWidget):
         
         for game in game_list:
             item = QListWidgetItem()
-            # 检查实际的同步状态（从Syncthing获取）
-            is_syncing = self._check_actual_sync_status(game)
-            sync_status = "🔄 启用同步" if is_syncing else "⚪ 停止同步"
-            item.setText(f"{game.get('name', '未命名')}\n{sync_status}")
+            # 只显示游戏名称，不显示同步状态（状态在详情中显示）
+            item.setText(game.get('name', '未命名'))
             item.setData(Qt.UserRole, game)
             self.game_list.addItem(item)
     
@@ -350,7 +324,7 @@ class GameInterface(QWidget):
         # 同步更新 selected_game 中的状态（关键修复：确保 toggle_sync 可以正确判断）
         self.selected_game['is_syncing'] = is_syncing
                 
-        sync_status = "🔄 启用同步" if is_syncing else "⚪ 停止同步"
+        sync_status = "🔄 已加入分享" if is_syncing else "⚪ 未加入分享"
         self.sync_status_label.setText(sync_status)
         self.sync_status_label.setStyleSheet(f"color: {'#107c10' if is_syncing else '#999999'}; font-size: 13px; font-weight: 500;")
         
@@ -360,97 +334,61 @@ class GameInterface(QWidget):
         else:
             self.sync_status_icon.setIcon(FluentIcon.CANCEL)
         
-        # 更新同步按钮文本
+            # 更新同步按钮文本
         if is_syncing:
-            self.sync_btn.setText("⏸️ 停止同步")
+            self.sync_btn.setText("⏸️ 停止分享")
         else:
-            self.sync_btn.setText("✅ 启动同步")
+            self.sync_btn.setText("✅ 加入分享")
         
-        # 加载游戏图标
-        icon_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'resources', 'icons')
-        icon_path = os.path.join(icon_dir, 'mc.png' if game_data.get('type') == 'minecraft' else 'game3.png')
-        if os.path.exists(icon_path):
-            pixmap = QPixmap(icon_path).scaled(56, 56, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            self.game_icon_label.setPixmap(pixmap)
-        else:
-            # 如果图标不存在，显示默认图标
-            self.game_icon_label.setText("🎮")
-            self.game_icon_label.setStyleSheet("background: transparent; border: none; font-size: 36px;")
+        # 显示文件列表和操作按钮
+        self.load_file_list(game_data)
+        self.saves_area.setVisible(True)
+        self.action_buttons.setVisible(True)
+    
+    def add_game(self):
+        """添加游戏 - 直接选择目录"""
+        from PyQt5.QtWidgets import QFileDialog
+        from utils.config_cache import ConfigCache
         
-        # 根据游戏类型加载存档列表
-        if game_data.get('type') == 'minecraft':
-            # Minecraft 显示存档
-            self.load_saves_list(game_data)
+        # 直接选择游戏目录
+        game_dir = QFileDialog.getExistingDirectory(
+            self,
+            "选择游戏目录",
+            "",
+            QFileDialog.ShowDirsOnly
+        )
+        if game_dir:
+            # 保存到配置
+            config_data = ConfigCache.load()
+            game_list = config_data.get("game_list", [])
+            game_list.append({
+                "name": os.path.basename(game_dir),
+                "type": "other",
+                "save_path": game_dir,
+                "is_syncing": False
+            })
+            config_data["game_list"] = game_list
+            ConfigCache.save(config_data)
             
-            self.saves_area.setVisible(True)
-            self.action_buttons.setVisible(True)
-        else:
-            # 其他游戏隐藏存档
-            self.saves_area.setVisible(False)
-            self.action_buttons.setVisible(True)
-            
-            InfoBar.info(
-                title='提示',
-                content="请先配置游戏启动器和存档目录",
+            InfoBar.success(
+                title='成功',
+                content=f"已添加游戏：{os.path.basename(game_dir)}",
                 orient=Qt.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
                 duration=2000,
                 parent=self
             )
-    
-    def add_game(self):
-        """添加游戏"""
-        from ui.components.dialogs.add_game_dialog import AddGameDialog
-        from ui.components.dialogs.launcher_selector import LauncherSelectorDialog
-        from PyQt5.QtWidgets import QDialog, QFileDialog
-        from utils.config_cache import ConfigCache
-        
-        # 显示游戏类型选择对话框
-        dialog = AddGameDialog(self)
-        if dialog.exec_() == QDialog.Accepted:
-            if dialog.game_type == 'minecraft':
-                # 我的世界 - 显示启动器选择对话框
-                launcher_dialog = LauncherSelectorDialog(self.parent_window)
-                if launcher_dialog.exec_() == QDialog.Accepted:
-                    # 重新加载游戏列表
-                    self.load_game_list()
-            elif dialog.game_type == 'other':
-                # 其他游戏 - 直接选择游戏目录
-                game_dir = QFileDialog.getExistingDirectory(
-                    self,
-                    "选择游戏目录",
-                    "",
-                    QFileDialog.ShowDirsOnly
-                )
-                if game_dir:
-                    # 保存到配置
-                    config_data = ConfigCache.load()
-                    game_list = config_data.get("game_list", [])
-                    game_list.append({
-                        "name": os.path.basename(game_dir),
-                        "type": "other",
-                        "save_path": game_dir,
-                        "is_syncing": False
-                    })
-                    config_data["game_list"] = game_list
-                    ConfigCache.save(config_data)
-                    
-                    InfoBar.success(
-                        title='成功',
-                        content=f"已添加游戏：{os.path.basename(game_dir)}",
-                        orient=Qt.Horizontal,
-                        isClosable=True,
-                        position=InfoBarPosition.TOP,
-                        duration=2000,
-                        parent=self
-                    )
-                    
-                    # 重新加载游戏列表
-                    self.load_game_list()
+            
+            # 重新加载游戏列表
+            self.load_game_list()
     
     def load_saves_list(self, game_data):
-        """加载存档列表"""
+        """加载存档列表（保留兼容性）"""
+        self.load_file_list(game_data)
+    
+    def load_file_list(self, game_data):
+        """加载目录文件列表（包括文件和文件夹）"""
         import datetime
         
         self.saves_table.setRowCount(0)
@@ -459,46 +397,44 @@ class GameInterface(QWidget):
         if not save_path or not os.path.exists(save_path):
             return
         
-        # 扫描存档目录
+        # 扫描目录中的所有文件和文件夹
         try:
-            saves = []
+            items = []
             for item in os.listdir(save_path):
                 item_path = os.path.join(save_path, item)
-                if os.path.isdir(item_path):
+                try:
                     # 获取最后修改时间
                     mtime = os.path.getmtime(item_path)
-                    update_time = datetime.datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M')
-                    saves.append((item, update_time))
+                    update_time = datetime.datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
+                    
+                    # 标记是文件还是文件夹
+                    if os.path.isdir(item_path):
+                        display_name = f"📁 {item}"
+                    else:
+                        display_name = f"📄 {item}"
+                    
+                    items.append((display_name, update_time, mtime))
+                except Exception as e:
+                    logger.warning(f"无法获取文件信息 {item_path}: {e}")
+                    continue
             
-            # 按修改时间排序
-            saves.sort(key=lambda x: x[1], reverse=True)
+            # 按修改时间排序（最新的在前）
+            items.sort(key=lambda x: x[2], reverse=True)
             
             # 填充表格
-            self.saves_table.setRowCount(len(saves))
-            for i, (save_name, update_time) in enumerate(saves):
-                self.saves_table.setItem(i, 0, QTableWidgetItem(save_name))
+            self.saves_table.setRowCount(len(items))
+            for i, (item_name, update_time, _) in enumerate(items):
+                self.saves_table.setItem(i, 0, QTableWidgetItem(item_name))
                 time_item = QTableWidgetItem(update_time)
                 time_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 self.saves_table.setItem(i, 1, time_item)
         except Exception as e:
-            logger.error(f"加载存档列表失败: {e}")
+            logger.error(f"加载文件列表失败: {e}")
     
     
     
-    @pyqtSlot(str)
-    def _show_error_message(self, message):
-        """线程安全的错误消息显示"""
-        InfoBar.error(
-            title='错误',
-            content=message,
-            orient=Qt.Horizontal,
-            isClosable=True,
-            position=InfoBarPosition.TOP,
-            duration=2000,
-            parent=self
-        )
-    
-    def toggle_sync(self):
+    @pyqtSlot(bool)
+    def toggle_sync(self, checked=False):
         """切换同步状态"""
         if not self.selected_game:
             InfoBar.warning(
@@ -620,29 +556,35 @@ class GameInterface(QWidget):
                     )
                     return
                 
-                # 等待 Syncthing 处理配置
-                import time
-                time.sleep(2)
+                # 使用 QTimer 延迟验证，避免阻塞主线程
+                def verify_folder():
+                    try:
+                        # 验证文件夹是否成功恢复
+                        config_verify = self.parent_window.syncthing_manager.get_config()
+                        if config_verify:
+                            for folder in config_verify.get('folders', []):
+                                if folder.get('id') == folder_id:
+                                    is_paused = folder.get('paused', True)
+                                    if is_paused:
+                                        InfoBar.error(
+                                            title='错误',
+                                            content="文件夹恢复失败，仍处于暂停状态",
+                                            orient=Qt.Horizontal,
+                                            isClosable=True,
+                                            position=InfoBarPosition.TOP,
+                                            duration=3000,
+                                            parent=self
+                                        )
+                                        return
+                                    logger.info(f"文件夹已成功恢复: {folder_id}, 暂停状态: {is_paused}")
+                                    # 通知存档同步页面刷新（延迟执行，避免卡顿）
+                                    if hasattr(self.parent_window, 'sync_interface'):
+                                        QTimer.singleShot(500, self.parent_window.sync_interface.refresh_sync)
+                                    break
+                    except Exception as e:
+                        logger.error(f"验证文件夹失败: {e}")
                 
-                # 验证文件夹是否成功恢复
-                config_verify = self.parent_window.syncthing_manager.get_config()
-                if config_verify:
-                    for folder in config_verify.get('folders', []):
-                        if folder.get('id') == folder_id:
-                            is_paused = folder.get('paused', True)
-                            if is_paused:
-                                InfoBar.error(
-                                    title='错误',
-                                    content="文件夹恢复失败，仍处于暂停状态",
-                                    orient=Qt.Horizontal,
-                                    isClosable=True,
-                                    position=InfoBarPosition.TOP,
-                                    duration=3000,
-                                    parent=self
-                                )
-                                return
-                            logger.info(f"文件夹已成功恢复: {folder_id}, 暂停状态: {is_paused}")
-                            break
+                QTimer.singleShot(2000, verify_folder)
             else:
                 # 文件夹不存在，需要创建
                 # 获取所有设备ID（除了本机）
@@ -702,74 +644,82 @@ class GameInterface(QWidget):
                     )
                     return
                 
-                # 等待Syncthing处理配置
-                import time
-                time.sleep(2)
+                # 使用 QTimer 延迟验证，避免阻塞主线程
+                def verify_folder_added():
+                    try:
+                        # 验证文件夹是否成功添加
+                        config_verify = self.parent_window.syncthing_manager.get_config()
+                        folder_added = False
+                        if config_verify:
+                            for folder in config_verify.get('folders', []):
+                                if folder.get('id') == folder_id:
+                                    folder_added = True
+                                    is_paused = folder.get('paused', True)
+                                    logger.info(f"文件夹已添加: {folder_id}, 暂停状态: {is_paused}")
+                                    break
+                        
+                        if not folder_added:
+                            InfoBar.error(
+                                title='错误',
+                                content="文件夹配置验证失败，请检查Syncthing状态",
+                                orient=Qt.Horizontal,
+                                isClosable=True,
+                                position=InfoBarPosition.TOP,
+                                duration=3000,
+                                parent=self
+                            )
+                            # 恢复状态
+                            self.selected_game['is_syncing'] = False
+                            self.sync_btn.setText("✅ 加入分享")
+                            self.sync_status_label.setText("⚪ 未加入分享")
+                            return
+                        
+                        # 通知存档同步页面刷新（延迟执行，避免卡顿）
+                        if hasattr(self.parent_window, 'sync_interface'):
+                            QTimer.singleShot(500, self.parent_window.sync_interface.refresh_sync)
+                    except Exception as e:
+                        logger.error(f"验证文件夹添加失败: {e}")
+                        import traceback
+                        logger.error(traceback.format_exc())
                 
-                # 验证文件夹是否成功添加
-                config_verify = self.parent_window.syncthing_manager.get_config()
-                folder_added = False
-                if config_verify:
-                    for folder in config_verify.get('folders', []):
-                        if folder.get('id') == folder_id:
-                            folder_added = True
-                            is_paused = folder.get('paused', True)
-                            logger.info(f"文件夹已添加: {folder_id}, 暂停状态: {is_paused}")
-                            break
+                QTimer.singleShot(2000, verify_folder_added)
+                # 先更新UI，不等待验证
+                self.selected_game['is_syncing'] = True
+                self.selected_game['sync_folder_id'] = folder_id
                 
-                if not folder_added:
-                    InfoBar.error(
-                        title='错误',
-                        content="文件夹配置验证失败，请检查Syncthing状态",
-                        orient=Qt.Horizontal,
-                        isClosable=True,
-                        position=InfoBarPosition.TOP,
-                        duration=3000,
-                        parent=self
-                    )
-                    return
-            
-            # 更新状态
-            self.selected_game['is_syncing'] = True
-            self.selected_game['sync_folder_id'] = folder_id
-            
-            # 保存配置
-            config_data = ConfigCache.load()
-            game_list = config_data.get("game_list", [])
-            for game in game_list:
-                if game.get('name') == self.selected_game.get('name'):
-                    game['is_syncing'] = True
-                    game['sync_folder_id'] = folder_id
-                    break
-            ConfigCache.save(config_data)
-            
-            # 更新按钮样式
-            self.sync_btn.setText("⏸️ 停止同步")
-            self.sync_status_label.setText("🔄 启用同步")
-            self.sync_status_label.setStyleSheet("color: #107c10; font-size: 12px;")
-            
-            InfoBar.success(
-                title='成功',
-                content=f"已启用「{game_name}」的存档同步",
-                orient=Qt.Horizontal,
-                isClosable=True,
-                position=InfoBarPosition.TOP,
-                duration=2000,
-                parent=self
-            )
-            
-            # 通知存档同步页面刷新
-            if hasattr(self.parent_window, 'sync_interface'):
-                self.parent_window.sync_interface.refresh_sync()
-            
-            # 刷新游戏列表显示状态
-            self.load_game_list()
-            # 重新选中当前游戏
-            for i in range(self.game_list.count()):
-                item = self.game_list.item(i)
-                if item.data(Qt.UserRole) and item.data(Qt.UserRole).get('name') == self.selected_game.get('name'):
-                    self.game_list.setCurrentItem(item)
-                    break
+                # 保存配置
+                config_data = ConfigCache.load()
+                game_list = config_data.get("game_list", [])
+                for game in game_list:
+                    if game.get('name') == self.selected_game.get('name'):
+                        game['is_syncing'] = True
+                        game['sync_folder_id'] = folder_id
+                        break
+                ConfigCache.save(config_data)
+                
+                # 更新按钮样式
+                self.sync_btn.setText("⏸️ 停止分享")
+                self.sync_status_label.setText("🔄 已加入分享")
+                self.sync_status_label.setStyleSheet("color: #107c10; font-size: 12px;")
+                
+                InfoBar.success(
+                    title='成功',
+                    content=f"「{game_name}」已加入分享",
+                    orient=Qt.Horizontal,
+                    isClosable=True,
+                    position=InfoBarPosition.TOP,
+                    duration=2000,
+                    parent=self
+                )
+                
+                # 刷新游戏列表显示状态
+                self.load_game_list()
+                # 重新选中当前游戏
+                for i in range(self.game_list.count()):
+                    item = self.game_list.item(i)
+                    if item.data(Qt.UserRole) and item.data(Qt.UserRole).get('name') == self.selected_game.get('name'):
+                        self.game_list.setCurrentItem(item)
+                        break
             
         except Exception as e:
             logger.error(f"启用同步失败: {e}")
@@ -809,13 +759,13 @@ class GameInterface(QWidget):
             ConfigCache.save(config_data)
             
             # 更新按钮样式
-            self.sync_btn.setText("✅ 启动同步")
-            self.sync_status_label.setText("⚪ 停止同步")
+            self.sync_btn.setText("✅ 加入分享")
+            self.sync_status_label.setText("⚪ 未加入分享")
             self.sync_status_label.setStyleSheet("color: #999999; font-size: 12px;")
             
             InfoBar.success(
                 title='成功',
-                content=f"已停止「{self.selected_game.get('name')}」的存档同步",
+                content=f"「{self.selected_game.get('name')}」已停止分享",
                 orient=Qt.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,
@@ -867,8 +817,8 @@ class GameInterface(QWidget):
             logger.error(f"检查同步状态失败: {e}")
             return False
     
-    def delete_game(self):
-        """删除游戏"""
+    def delete_game(self, checked=False):
+        """停止分享"""
         if not self.selected_game:
             InfoBar.warning(
                 title='提示',
@@ -886,10 +836,10 @@ class GameInterface(QWidget):
         
         game_name = self.selected_game.get('name')
         
-        # 确认删除
+        # 确认停止分享
         w = MessageBox(
-            "确认删除",
-            f"确定要删除游戏 \"{game_name}\" 吗？\n\n注：只会删除配置，不会删除游戏文件。",
+            "确认停止分享",
+            f"确定要停止分享游戏 \"{game_name}\" 吗？\n\n注：停止分享后，其他设备将无法同步此存档。",
             self
         )
         if not w.exec_():
@@ -921,17 +871,16 @@ class GameInterface(QWidget):
             
             # 隐藏右侧区域
             self.game_info_card.setVisible(False)
-            self.player_info_card.setVisible(False)
             self.saves_area.setVisible(False)
             self.action_buttons.setVisible(False)
             
-            logger.info(f"已删除游戏: {game_name}")
+            logger.info(f"已停止分享游戏: {game_name}")
             
         except Exception as e:
-            logger.error(f"删除游戏失败: {e}")
+            logger.error(f"停止分享失败: {e}")
             InfoBar.error(
                 title='错误',
-                content=f"删除游戏失败: {str(e)}",
+                content=f"停止分享失败: {str(e)}",
                 orient=Qt.Horizontal,
                 isClosable=True,
                 position=InfoBarPosition.TOP,

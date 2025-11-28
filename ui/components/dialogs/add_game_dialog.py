@@ -32,6 +32,18 @@ class AddGameDialog(QDialog):
         
         self.init_ui()
     
+    def showEvent(self, event):
+        """窗口显示时居中"""
+        super().showEvent(event)
+        self._center_window()
+    
+    def keyPressEvent(self, event):
+        """处理键盘事件"""
+        if event.key() == Qt.Key_Escape:
+            self.reject()
+        else:
+            super().keyPressEvent(event)
+    
     def init_ui(self):
         """初始化界面"""
         layout = QVBoxLayout(self)
@@ -105,14 +117,26 @@ class AddGameDialog(QDialog):
         
         layout.addWidget(container)
     
+    def _center_window(self):
+        """居中显示窗口"""
+        if self.parent():
+            parent_geometry = self.parent().geometry()
+            x = parent_geometry.x() + (parent_geometry.width() - self.width()) // 2
+            y = parent_geometry.y() + (parent_geometry.height() - self.height()) // 2
+            self.move(x, y)
+        else:
+            # 如果没有父窗口，使用屏幕中心
+            from PyQt5.QtWidgets import QApplication
+            screen = QApplication.primaryScreen().geometry()
+            x = (screen.width() - self.width()) // 2
+            y = (screen.height() - self.height()) // 2
+            self.move(x, y)
+    
     def create_game_card(self, icon_name, title, description, game_type):
         """创建游戏类型卡片"""
-        card = CardWidget()
+        card = GameTypeCard(game_type, self)
         card.setFixedHeight(80)
         card.setCursor(Qt.PointingHandCursor)
-        
-        # 点击事件
-        card.mousePressEvent = lambda e: self.select_game_type(game_type)
         
         card_layout = QHBoxLayout(card)
         card_layout.setContentsMargins(20, 16, 20, 16)
@@ -180,3 +204,18 @@ class AddGameDialog(QDialog):
         """选择游戏类型"""
         self.game_type = game_type
         self.accept()
+
+
+class GameTypeCard(CardWidget):
+    """游戏类型卡片（自定义事件处理）"""
+    
+    def __init__(self, game_type, dialog):
+        super().__init__()
+        self.game_type = game_type
+        self.dialog = dialog
+    
+    def mousePressEvent(self, event):
+        """处理鼠标点击事件"""
+        if event.button() == Qt.LeftButton:
+            self.dialog.select_game_type(self.game_type)
+        super().mousePressEvent(event)
